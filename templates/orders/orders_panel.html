@@ -1,0 +1,298 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Painel de Pedidos{% endblock %}
+
+{% block extra_css %}
+    <link rel="stylesheet" href="{% static 'css/order_panel.css' %}">
+{% endblock %}
+
+{% block content %}
+    <section class="panel-header">
+        <div>
+            <p class="eyebrow">Pedidos do bar</p>
+            <h1>Painel de Pedidos</h1>
+            <p class="subtitle">Pr&eacute;-venda, preparo e entregues.</p>
+        </div>
+
+        <form class="order-search" method="get">
+            <label for="order-search-input">Buscar pedido</label>
+            <div class="search-row">
+                <input
+                    id="order-search-input"
+                    type="search"
+                    name="q"
+                    value="{{ search_query }}"
+                    placeholder="Numero, autor ou item"
+                    autocomplete="off"
+                >
+                <button type="submit">Buscar</button>
+                {% if search_query %}
+                    <a class="clear-search" href="{% url 'orders:orders_panel' %}">Limpar</a>
+                {% endif %}
+            </div>
+        </form>
+    </section>
+
+    {% if messages %}
+        <div class="messages">
+            {% for message in messages %}
+                <div class="message">{{ message }}</div>
+            {% endfor %}
+        </div>
+    {% endif %}
+
+    <div class="panel-summary">
+        <strong>{{ total_active_orders }}</strong>
+        <span>
+            {% if search_query %}
+                resultado(s) para "{{ search_query }}"
+            {% else %}
+                pedido(s) ativos no painel
+            {% endif %}
+        </span>
+    </div>
+
+    <nav class="mobile-column-nav" aria-label="Grupos de pedidos">
+        <button class="mobile-column-button active" type="button" data-target="orders-pre-sale">
+            Pr&eacute;-venda
+            <span>{{ pre_sale_count }}</span>
+        </button>
+        <button class="mobile-column-button" type="button" data-target="orders-preparing">
+            Vendidos
+            <span>{{ preparing_count }}</span>
+        </button>
+        <button class="mobile-column-button" type="button" data-target="orders-delivered">
+            Entregues
+            <span>{{ delivered_count }}</span>
+        </button>
+    </nav>
+
+    <div class="orders-board">
+        <section class="order-column order-column-pre-sale" id="orders-pre-sale">
+            <header class="column-header">
+                <div>
+                    <p>Grupo</p>
+                    <h2>Pr&eacute;-venda</h2>
+                </div>
+                <span>{{ pre_sale_count }}</span>
+            </header>
+
+            <div class="order-list">
+                {% for order in pre_sale_orders %}
+                    <article class="order-card">
+                        <header class="order-card-header">
+                            <div>
+                                <a class="order-number" href="{% url 'orders:order_detail' order.id %}">
+                                    Pedido #{{ order.id }}
+                                </a>
+                                <p>{{ order.table_or_tab|default:"Sem mesa/comanda" }}</p>
+                            </div>
+                            <strong>R$ {{ order.total_amount|floatformat:2 }}</strong>
+                        </header>
+
+                        <dl class="order-meta">
+                            <div>
+                                <dt>Autor</dt>
+                                <dd>{{ order.created_by|default:"-" }}</dd>
+                            </div>
+                            <div>
+                                <dt>Criado</dt>
+                                <dd>{{ order.created_at|date:"d/m H:i" }}</dd>
+                            </div>
+                        </dl>
+
+                        <ul class="order-items">
+                            {% for item in order.items.all %}
+                                <li>
+                                    <span>{{ item.quantity|floatformat:0 }}x</span>
+                                    {{ item.product.name }}
+                                </li>
+                            {% empty %}
+                                <li>Nenhum item.</li>
+                            {% endfor %}
+                        </ul>
+
+                        <div class="order-actions">
+                            <a class="action-button action-details" href="{% url 'orders:order_detail' order.id %}">
+                                Detalhes
+                            </a>
+
+                            {% if can_approve_order %}
+                                <form method="post" action="{% url 'orders:approve_order' order.id 'pix' %}">
+                                    {% csrf_token %}
+                                    <button class="action-button action-pix" type="submit">Pix</button>
+                                </form>
+                                <form method="post" action="{% url 'orders:approve_order' order.id 'cash' %}">
+                                    {% csrf_token %}
+                                    <button class="action-button action-cash" type="submit">Dinheiro</button>
+                                </form>
+                                <form method="post" action="{% url 'orders:approve_order' order.id 'debit' %}">
+                                    {% csrf_token %}
+                                    <button class="action-button action-card" type="submit">D&eacute;bito</button>
+                                </form>
+                                <form method="post" action="{% url 'orders:approve_order' order.id 'credit' %}">
+                                    {% csrf_token %}
+                                    <button class="action-button action-card" type="submit">Cr&eacute;dito</button>
+                                </form>
+                            {% endif %}
+
+                            {% if can_cancel_pre_sale %}
+                                <form method="post" action="{% url 'orders:cancel_order' order.id %}">
+                                    {% csrf_token %}
+                                    <button class="action-button action-cancel" type="submit">Cancelar</button>
+                                </form>
+                            {% endif %}
+                        </div>
+                    </article>
+                {% empty %}
+                    <div class="empty-column">Nenhuma pr&eacute;-venda.</div>
+                {% endfor %}
+            </div>
+        </section>
+
+        <section class="order-column order-column-preparing" id="orders-preparing">
+            <header class="column-header">
+                <div>
+                    <p>Grupo</p>
+                    <h2>Vendidos</h2>
+                </div>
+                <span>{{ preparing_count }}</span>
+            </header>
+
+            <div class="order-list">
+                {% for order in preparing_orders %}
+                    <article class="order-card">
+                        <header class="order-card-header">
+                            <div>
+                                <a class="order-number" href="{% url 'orders:order_detail' order.id %}">
+                                    Pedido #{{ order.id }}
+                                </a>
+                                <p>{{ order.table_or_tab|default:"Sem mesa/comanda" }}</p>
+                            </div>
+                            <strong>R$ {{ order.total_amount|floatformat:2 }}</strong>
+                        </header>
+
+                        <dl class="order-meta">
+                            <div>
+                                <dt>Autor</dt>
+                                <dd>{{ order.created_by|default:"-" }}</dd>
+                            </div>
+                            <div>
+                                <dt>Aprovado por</dt>
+                                <dd>{{ order.approved_by|default:"-" }}</dd>
+                            </div>
+                        </dl>
+
+                        <ul class="order-items">
+                            {% for item in order.items.all %}
+                                <li>
+                                    <span>{{ item.quantity|floatformat:0 }}x</span>
+                                    {{ item.product.name }}
+                                </li>
+                            {% empty %}
+                                <li>Nenhum item.</li>
+                            {% endfor %}
+                        </ul>
+
+                        <div class="order-actions">
+                            <a class="action-button action-details" href="{% url 'orders:order_detail' order.id %}">
+                                Detalhes
+                            </a>
+
+                            {% if can_mark_delivered %}
+                                <form method="post" action="{% url 'orders:mark_order_delivered' order.id %}">
+                                    {% csrf_token %}
+                                    <button class="action-button action-deliver" type="submit">Entregue</button>
+                                </form>
+                            {% endif %}
+                        </div>
+                    </article>
+                {% empty %}
+                    <div class="empty-column">Nenhum pedido em preparo.</div>
+                {% endfor %}
+            </div>
+        </section>
+
+        <section class="order-column order-column-delivered" id="orders-delivered">
+            <header class="column-header">
+                <div>
+                    <p>Grupo</p>
+                    <h2>Entregue</h2>
+                </div>
+                <span>{{ delivered_count }}</span>
+            </header>
+
+            <div class="order-list">
+                {% for order in delivered_orders %}
+                    <article class="order-card">
+                        <header class="order-card-header">
+                            <div>
+                                <a class="order-number" href="{% url 'orders:order_detail' order.id %}">
+                                    Pedido #{{ order.id }}
+                                </a>
+                                <p>{{ order.table_or_tab|default:"Sem mesa/comanda" }}</p>
+                            </div>
+                            <strong>R$ {{ order.total_amount|floatformat:2 }}</strong>
+                        </header>
+
+                        <dl class="order-meta">
+                            <div>
+                                <dt>Autor</dt>
+                                <dd>{{ order.created_by|default:"-" }}</dd>
+                            </div>
+                            <div>
+                                <dt>Entregue</dt>
+                                <dd>{{ order.delivered_at|date:"d/m H:i"|default:"-" }}</dd>
+                            </div>
+                        </dl>
+
+                        <ul class="order-items">
+                            {% for item in order.items.all %}
+                                <li>
+                                    <span>{{ item.quantity|floatformat:0 }}x</span>
+                                    {{ item.product.name }}
+                                </li>
+                            {% empty %}
+                                <li>Nenhum item.</li>
+                            {% endfor %}
+                        </ul>
+
+                        <div class="order-actions">
+                            <a class="action-button action-details" href="{% url 'orders:order_detail' order.id %}">
+                                Detalhes
+                            </a>
+                        </div>
+                    </article>
+                {% empty %}
+                    <div class="empty-column">Nenhum pedido entregue.</div>
+                {% endfor %}
+            </div>
+        </section>
+    </div>
+{% endblock %}
+
+{% block extra_js %}
+    <script>
+        const mobileColumnButtons = document.querySelectorAll(".mobile-column-button");
+
+        mobileColumnButtons.forEach((button) => {
+            button.addEventListener("click", () => {
+                const target = document.getElementById(button.dataset.target);
+
+                if (!target) {
+                    return;
+                }
+
+                target.scrollIntoView({
+                    behavior: "smooth",
+                    block: "nearest",
+                    inline: "start",
+                });
+
+                mobileColumnButtons.forEach((item) => item.classList.remove("active"));
+                button.classList.add("active");
+            });
+        });
+    </script>
+{% endblock %}

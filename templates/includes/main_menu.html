@@ -1,0 +1,172 @@
+<style>
+    .app-topbar {
+        background: #111827;
+        color: white;
+        padding: 12px 16px;
+        border-radius: 14px;
+        margin-bottom: 20px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        position: relative;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.10);
+    }
+
+    .app-brand {
+        font-weight: bold;
+        font-size: 16px;
+    }
+
+    .app-user {
+        color: #d1d5db;
+        font-size: 13px;
+        margin-top: 3px;
+    }
+
+    .menu-button {
+        border: none;
+        background: #2563eb;
+        color: white;
+        border-radius: 10px;
+        padding: 10px 12px;
+        font-weight: bold;
+        cursor: pointer;
+        font-size: 15px;
+    }
+
+    .dropdown-menu {
+        display: none;
+        position: absolute;
+        right: 16px;
+        top: 58px;
+        background: white;
+        color: #111827;
+        border-radius: 12px;
+        min-width: 230px;
+        box-shadow: 0 8px 22px rgba(0,0,0,0.18);
+        padding: 8px;
+        z-index: 9999;
+    }
+
+    .dropdown-menu.open {
+        display: block;
+    }
+
+    .dropdown-menu a {
+        display: block;
+        padding: 12px;
+        color: #111827;
+        text-decoration: none;
+        border-radius: 8px;
+        font-weight: bold;
+    }
+
+    .dropdown-menu a:hover {
+        background: #f3f4f6;
+    }
+
+    .dropdown-menu .danger {
+        color: #dc2626;
+    }
+
+    .dropdown-divider {
+        height: 1px;
+        background: #e5e7eb;
+        margin: 6px 0;
+    }
+
+    @media (max-width: 700px) {
+        .app-topbar {
+            border-radius: 10px;
+            margin-bottom: 14px;
+        }
+
+        .dropdown-menu {
+            left: 12px;
+            right: 12px;
+            top: 60px;
+            min-width: auto;
+        }
+    }
+</style>
+
+<div class="app-topbar">
+    <div>
+        <div class="app-brand">Bar SaaS</div>
+
+        {% if menu_permissions.is_authenticated %}
+            <div class="app-user">
+                Usuário: {{ menu_permissions.username }}
+            </div>
+        {% endif %}
+    </div>
+
+    <button type="button" class="menu-button" onclick="toggleMainMenu()">
+        ☰ Menu
+    </button>
+
+    <div id="mainDropdownMenu" class="dropdown-menu">
+        
+        {% if menu_permissions.can_adjust_stock %}
+        <a href="/estoque/conferencia/">Conferência de estoque</a>
+        {% endif %}
+
+        {% if menu_permissions.can_access_pdv %}
+            <a href="/pdv/">PDV</a>
+        {% endif %}
+
+        {% if menu_permissions.can_view_orders_panel %}
+            <a href="/pedidos/">Pedidos</a>
+        {% endif %}
+
+        {% if menu_permissions.can_view_stock %}
+            <a href="/estoque/">Estoque</a>
+        {% endif %}
+
+        {% if menu_permissions.can_create_stock_entry %}
+            <a href="/estoque/entrada/">Nova entrada de estoque</a>
+            <a href="/produtos/novo/">Novo produto</a>
+        {% endif %}
+
+        {% if menu_permissions.can_manage_users %}
+            <div class="dropdown-divider"></div>
+            <a href="/pessoal/">Pessoal</a>
+        {% endif %}
+
+        {% if menu_permissions.can_access_admin %}
+            <div class="dropdown-divider"></div>
+            <a href="/admin/">Admin</a>
+        {% endif %}
+
+        <div class="dropdown-divider"></div>
+
+        {% if menu_permissions.is_authenticated %}
+            <a class="danger" href="/accounts/logout/">Sair</a>
+        {% else %}
+            <a href="/accounts/login/">Entrar</a>
+        {% endif %}
+    </div>
+</div>
+
+<script>
+    function toggleMainMenu() {
+        const menu = document.getElementById("mainDropdownMenu");
+        menu.classList.toggle("open");
+    }
+
+    document.addEventListener("click", function(event) {
+        const menu = document.getElementById("mainDropdownMenu");
+        const button = document.querySelector(".menu-button");
+
+        if (!menu || !button) {
+            return;
+        }
+
+        const clickedInsideMenu = menu.contains(event.target);
+        const clickedButton = button.contains(event.target);
+
+        if (!clickedInsideMenu && !clickedButton) {
+            menu.classList.remove("open");
+        }
+    });
+</script>

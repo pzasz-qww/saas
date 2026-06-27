@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <title>Pedido #{{ order.id }}</title>
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: #f4f4f5;
+            margin: 0;
+            padding: 24px;
+            color: #111827;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+        }
+
+        .top-links {
+            margin-bottom: 20px;
+        }
+
+        .top-links a {
+            color: #2563eb;
+            font-weight: bold;
+            margin-right: 14px;
+            text-decoration: none;
+        }
+
+        .card {
+            background: white;
+            border-radius: 14px;
+            padding: 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.06);
+            margin-bottom: 18px;
+        }
+
+        h1 {
+            margin-top: 0;
+            margin-bottom: 6px;
+        }
+
+        .subtitle {
+            color: #6b7280;
+            margin-bottom: 16px;
+        }
+
+        .status {
+            display: inline-block;
+            padding: 6px 10px;
+            border-radius: 999px;
+            font-weight: bold;
+            font-size: 13px;
+        }
+
+        .pre_sale {
+            background: #fef3c7;
+            color: #92400e;
+        }
+
+        .sold {
+            background: #dbeafe;
+            color: #1e40af;
+        }
+
+        .delivered {
+            background: #dcfce7;
+            color: #166534;
+        }
+
+        .cancelled {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+
+        .discarded {
+            background: #f3f4f6;
+            color: #374151;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(220px, 1fr));
+            gap: 12px;
+            margin-top: 18px;
+        }
+
+        .info-box {
+            background: #f9fafb;
+            border-radius: 10px;
+            padding: 12px;
+        }
+
+        .label {
+            color: #6b7280;
+            font-size: 13px;
+            margin-bottom: 4px;
+        }
+
+        .value {
+            font-weight: bold;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 12px;
+        }
+
+        th {
+            background: #1f2937;
+            color: white;
+            text-align: left;
+            padding: 12px;
+        }
+
+        td {
+            padding: 12px;
+            border-bottom: 1px solid #e5e7eb;
+        }
+
+        .total {
+            font-size: 24px;
+            font-weight: bold;
+            color: #065f46;
+            text-align: right;
+            margin-top: 16px;
+        }
+
+        .actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 14px;
+        }
+
+        button {
+            border: none;
+            border-radius: 8px;
+            padding: 10px 12px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+
+        .btn-pix {
+            background: #2563eb;
+            color: white;
+        }
+
+        .btn-cash {
+            background: #059669;
+            color: white;
+        }
+
+        .btn-card {
+            background: #7c3aed;
+            color: white;
+        }
+
+        .btn-deliver {
+            background: #f59e0b;
+            color: #111827;
+        }
+
+        .btn-cancel {
+            background: #dc2626;
+            color: white;
+        }
+
+        .btn-discard {
+            background: #374151;
+            color: white;
+        }
+
+        .muted {
+            color: #6b7280;
+        }
+
+        .messages {
+            margin-bottom: 18px;
+        }
+
+        .message {
+            background: white;
+            border-left: 5px solid #2563eb;
+            padding: 12px 16px;
+            border-radius: 8px;
+            margin-bottom: 8px;
+            font-weight: bold;
+        }
+
+        @media (max-width: 700px) {
+            .grid {
+                grid-template-columns: 1fr;
+            }
+
+            body {
+                padding: 14px;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    {% include "includes/main_menu.html" %}
+    <div class="container">
+        
+
+        {% if messages %}
+            <div class="messages">
+                {% for message in messages %}
+                    <div class="message">{{ message }}</div>
+                {% endfor %}
+            </div>
+        {% endif %}
+
+        <div class="card">
+            <h1>Pedido #{{ order.id }}</h1>
+
+            <p class="subtitle">
+                Mesa/comanda: {{ order.table_or_tab|default:"-" }}
+            </p>
+
+            <span class="status {{ order.status }}">
+                {{ order.get_status_display }}
+            </span>
+
+            <div class="grid">
+                <div class="info-box">
+                    <div class="label">Empresa</div>
+                    <div class="value">{{ order.company }}</div>
+                </div>
+
+                <div class="info-box">
+                    <div class="label">Total</div>
+                    <div class="value">R$ {{ order.total_amount|floatformat:2 }}</div>
+                </div>
+
+                <div class="info-box">
+                    <div class="label">Criado por</div>
+                    <div class="value">{{ order.created_by|default:"-" }}</div>
+                </div>
+
+                <div class="info-box">
+                    <div class="label">Aprovado por</div>
+                    <div class="value">{{ order.approved_by|default:"-" }}</div>
+                </div>
+
+                <div class="info-box">
+                    <div class="label">Criado em</div>
+                    <div class="value">{{ order.created_at }}</div>
+                </div>
+
+                <div class="info-box">
+                    <div class="label">Aprovado em</div>
+                    <div class="value">{{ order.approved_at|default:"-" }}</div>
+                </div>
+
+                <div class="info-box">
+                    <div class="label">Venda gerada</div>
+                    <div class="value">
+                        {% if order.sale %}
+                            Venda #{{ order.sale.id }}
+                        {% else %}
+                            -
+                        {% endif %}
+                    </div>
+                </div>
+
+                <div class="info-box">
+                    <div class="label">Entregue em</div>
+                    <div class="value">{{ order.delivered_at|default:"-" }}</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>Itens do pedido</h2>
+
+            <table>
+                <thead>
+                    <tr>
+                        <th>Produto</th>
+                        <th>Quantidade</th>
+                        <th>Preço un.</th>
+                        <th>Total</th>
+                        <th>Observação</th>
+                    </tr>
+                </thead>
+
+                <tbody>
+                    {% for item in order.items.all %}
+                        <tr>
+                            <td>{{ item.product.name }}</td>
+                            <td>{{ item.quantity|floatformat:0 }}</td>
+                            <td>R$ {{ item.unit_price|floatformat:2 }}</td>
+                            <td>R$ {{ item.total_price|floatformat:2 }}</td>
+                            <td>{{ item.notes|default:"-" }}</td>
+                        </tr>
+                    {% empty %}
+                        <tr>
+                            <td colspan="5">Nenhum item no pedido.</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+
+            <div class="total">
+                Total: R$ {{ order.total_amount|floatformat:2 }}
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>Ações</h2>
+
+            {% if order.status == "pre_sale" %}
+                <p class="muted">
+                    Este pedido ainda é uma pré-venda. Aprove após o pagamento.
+                </p>
+
+                <div class="actions">
+                    <form method="post" action="{% url 'orders:approve_order' order.id 'pix' %}">
+                        {% csrf_token %}
+                        <button class="btn-pix" type="submit">Aprovar Pix</button>
+                    </form>
+
+                    <form method="post" action="{% url 'orders:approve_order' order.id 'cash' %}">
+                        {% csrf_token %}
+                        <button class="btn-cash" type="submit">Aprovar Dinheiro</button>
+                    </form>
+
+                    <form method="post" action="{% url 'orders:approve_order' order.id 'debit' %}">
+                        {% csrf_token %}
+                        <button class="btn-card" type="submit">Aprovar Débito</button>
+                    </form>
+
+                    <form method="post" action="{% url 'orders:approve_order' order.id 'credit' %}">
+                        {% csrf_token %}
+                        <button class="btn-card" type="submit">Aprovar Crédito</button>
+                    </form>
+
+                    <form method="post" action="{% url 'orders:cancel_order' order.id %}">
+                        {% csrf_token %}
+                        <button class="btn-cancel" type="submit">Cancelar pré-venda</button>
+                    </form>
+                </div>
+
+            {% elif order.status == "sold" %}
+                <p class="muted">
+                    Este pedido já foi vendido. Agora ele pode ser entregue, cancelado com retorno ao estoque ou descartado sem retorno.
+                </p>
+
+                <div class="actions">
+                    <form method="post" action="{% url 'orders:mark_order_delivered' order.id %}">
+                        {% csrf_token %}
+                        <button class="btn-deliver" type="submit">Marcar como entregue</button>
+                    </form>
+
+                    <form method="post" action="{% url 'orders:cancel_paid_order_with_stock_return' order.id %}">
+                        {% csrf_token %}
+                        <button class="btn-cancel" type="submit">Cancelar e devolver estoque</button>
+                    </form>
+
+                    <form method="post" action="{% url 'orders:discard_paid_order' order.id %}">
+                        {% csrf_token %}
+                        <button class="btn-discard" type="submit">Descartar sem devolver</button>
+                    </form>
+                </div>
+
+            {% elif order.status == "delivered" %}
+                <p class="muted">
+                    Este pedido já foi entregue.
+                </p>
+
+            {% elif order.status == "cancelled" %}
+                <p class="muted">
+                    Este pedido foi cancelado. Se ele já tinha sido vendido, os itens foram retornados ao estoque.
+                </p>
+
+            {% elif order.status == "discarded" %}
+                <p class="muted">
+                    Este pedido foi descartado. Os itens não voltaram ao estoque.
+                </p>
+            {% endif %}
+        </div>
+
+        {% if order.notes %}
+            <div class="card">
+                <h2>Observações</h2>
+                <p>{{ order.notes }}</p>
+            </div>
+        {% endif %}
+    </div>
+</body>
+</html>

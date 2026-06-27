@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <title>Novo produto</title>
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: #f4f4f5;
+            margin: 0;
+            padding: 24px;
+            color: #111827;
+        }
+
+        .container {
+            max-width: 760px;
+            margin: 0 auto;
+        }
+
+        .top-links {
+            margin-bottom: 20px;
+        }
+
+        .top-links a {
+            color: #2563eb;
+            font-weight: bold;
+            margin-right: 14px;
+            text-decoration: none;
+        }
+
+        .card {
+            background: white;
+            border-radius: 14px;
+            padding: 22px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.06);
+        }
+
+        h1 {
+            margin-top: 0;
+            margin-bottom: 6px;
+        }
+
+        .subtitle {
+            color: #6b7280;
+            margin-bottom: 22px;
+        }
+
+        label {
+            display: block;
+            font-weight: bold;
+            margin-bottom: 6px;
+        }
+
+        input,
+        select {
+            width: 100%;
+            box-sizing: border-box;
+            padding: 12px;
+            border: 1px solid #d1d5db;
+            border-radius: 10px;
+            font-size: 15px;
+            margin-bottom: 16px;
+        }
+
+        .checkbox-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 18px;
+        }
+
+        .checkbox-row input {
+            width: auto;
+            margin: 0;
+        }
+
+        .help {
+            color: #6b7280;
+            font-size: 13px;
+            margin-top: -10px;
+            margin-bottom: 16px;
+        }
+
+        button {
+            width: 100%;
+            border: none;
+            background: #2563eb;
+            color: white;
+            border-radius: 10px;
+            padding: 14px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+
+        button:hover {
+            background: #1d4ed8;
+        }
+
+        .messages {
+            margin-bottom: 18px;
+        }
+
+        .message {
+            background: white;
+            border-left: 5px solid #2563eb;
+            padding: 12px 16px;
+            border-radius: 8px;
+            margin-bottom: 8px;
+            font-weight: bold;
+        }
+
+        .warning-box {
+            background: #fef3c7;
+            color: #92400e;
+            padding: 14px;
+            border-radius: 10px;
+            margin-bottom: 18px;
+            font-weight: bold;
+        }
+
+        @media (max-width: 700px) {
+            body {
+                padding: 14px;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+       {% include "includes/main_menu.html" %}
+
+        {% if messages %}
+            <div class="messages">
+                {% for message in messages %}
+                    <div class="message">{{ message }}</div>
+                {% endfor %}
+            </div>
+        {% endif %}
+
+        <div class="card">
+            <h1>Novo produto</h1>
+            <p class="subtitle">
+                Cadastre um produto para venda, estoque ou uso interno.
+            </p>
+
+            {% if not units %}
+                <div class="warning-box">
+                    Nenhuma unidade cadastrada. Antes de cadastrar produtos, crie unidades no Admin, como: un, porção, ml, kg, rolo.
+                </div>
+            {% endif %}
+
+            <form method="post">
+                {% csrf_token %}
+
+                <label for="name">Nome do produto</label>
+                <input type="text" name="name" id="name" required placeholder="Ex: Porção de batata">
+
+                <label for="category">Categoria</label>
+                <input type="text" name="category" id="category" placeholder="Ex: Porções, Bebidas, Destilados">
+
+                <label for="product_type">Tipo de produto</label>
+                <select name="product_type" id="product_type">
+                    {% for value, label in product_types %}
+                        <option value="{{ value }}">{{ label }}</option>
+                    {% endfor %}
+                </select>
+
+                <label for="unit">Unidade</label>
+                <select name="unit" id="unit" required>
+                    <option value="">Selecione uma unidade</option>
+                    {% for unit in units %}
+                        <option value="{{ unit.id }}">{{ unit.name }} - {{ unit.symbol }}</option>
+                    {% endfor %}
+                </select>
+
+                <label for="sale_price">Preço de venda</label>
+                <input type="text" name="sale_price" id="sale_price" required placeholder="Ex: 28.00">
+                <div class="help">Use ponto ou vírgula. Ex: 28,00</div>
+
+                <label for="minimum_quantity">Estoque mínimo</label>
+                <input type="text" name="minimum_quantity" id="minimum_quantity" placeholder="Ex: 5">
+                <div class="help">Quando o estoque ficar igual ou abaixo disso, aparece como baixo.</div>
+
+                <div class="checkbox-row">
+                    <input type="checkbox" name="active" id="active" checked>
+                    <label for="active" style="margin-bottom:0;">Produto ativo</label>
+                </div>
+
+                <button type="submit" {% if not units %}disabled{% endif %}>
+                    Salvar produto
+                </button>
+            </form>
+        </div>
+    </div>
+</body>
+</html>

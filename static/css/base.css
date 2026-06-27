@@ -1,0 +1,48 @@
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    padding: 24px;
+    background: #f4f4f5;
+    color: #111827;
+    font-family: Arial, sans-serif;
+}
+
+.page-shell {
+    width: min(100%, 1280px);
+    margin: 0 auto;
+}
+
+.page-content {
+    width: 100%;
+}
+
+h1 {
+    margin: 0 0 6px;
+}
+
+.subtitle {
+    margin: 0 0 22px;
+    color: #6b7280;
+}
+
+.messages {
+    margin-bottom: 18px;
+}
+
+.message {
+    background: white;
+    border-left: 5px solid #2563eb;
+    padding: 12px 16px;
+    border-radius: 8px;
+    margin-bottom: 8px;
+    font-weight: bold;
+}
+
+@media (max-width: 700px) {
+    body {
+        padding: 14px;
+    }
+}

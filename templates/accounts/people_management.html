@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <title>Pessoal</title>
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: #f4f4f5;
+            margin: 0;
+            padding: 24px;
+            color: #111827;
+        }
+
+        .container {
+            max-width: 1150px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            margin-bottom: 6px;
+        }
+
+        .subtitle {
+            color: #6b7280;
+            margin-bottom: 22px;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 18px;
+            align-items: start;
+        }
+
+        .card {
+            background: white;
+            border-radius: 14px;
+            padding: 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.06);
+            margin-bottom: 18px;
+        }
+
+        label {
+            display: block;
+            font-weight: bold;
+            margin-bottom: 6px;
+        }
+
+        input,
+        select {
+            width: 100%;
+            box-sizing: border-box;
+            padding: 11px;
+            border: 1px solid #d1d5db;
+            border-radius: 10px;
+            font-size: 15px;
+            margin-bottom: 14px;
+        }
+
+        button {
+            border: none;
+            background: #2563eb;
+            color: white;
+            border-radius: 10px;
+            padding: 12px 14px;
+            font-size: 15px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+
+        button:hover {
+            background: #1d4ed8;
+        }
+
+        .secondary-button {
+            background: #059669;
+        }
+
+        .secondary-button:hover {
+            background: #047857;
+        }
+
+        .permissions-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(220px, 1fr));
+            gap: 10px;
+            margin-bottom: 16px;
+        }
+
+        .switch-row {
+            background: #f9fafb;
+            border-radius: 10px;
+            padding: 10px;
+            display: flex;
+            justify-content: space-between;
+            gap: 12px;
+            align-items: center;
+        }
+
+        .switch-row span {
+            font-size: 14px;
+            font-weight: bold;
+        }
+
+        .switch-row input {
+            width: auto;
+            margin: 0;
+            transform: scale(1.2);
+        }
+
+        .messages {
+            margin-bottom: 18px;
+        }
+
+        .message {
+            background: white;
+            border-left: 5px solid #2563eb;
+            padding: 12px 16px;
+            border-radius: 8px;
+            margin-bottom: 8px;
+            font-weight: bold;
+        }
+
+        details {
+            background: white;
+            border-radius: 14px;
+            padding: 14px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.06);
+            margin-bottom: 12px;
+        }
+
+        summary {
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 16px;
+        }
+
+        .employee-meta {
+            color: #6b7280;
+            font-size: 13px;
+            margin-top: 6px;
+            margin-bottom: 14px;
+        }
+
+        .inline-buttons {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
+        .help {
+            color: #6b7280;
+            font-size: 13px;
+            margin-top: -8px;
+            margin-bottom: 12px;
+        }
+
+        @media (max-width: 850px) {
+            body {
+                padding: 14px;
+            }
+
+            .grid {
+                grid-template-columns: 1fr;
+            }
+
+            .permissions-grid {
+                grid-template-columns: 1fr;
+            }
+
+            button {
+                width: 100%;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        {% include "includes/main_menu.html" %}
+
+        {% if messages %}
+            <div class="messages">
+                {% for message in messages %}
+                    <div class="message">{{ message }}</div>
+                {% endfor %}
+            </div>
+        {% endif %}
+
+        <h1>Pessoal</h1>
+        <p class="subtitle">
+            Cadastre funções, funcionários e ajuste permissões com chaves liga/desliga.
+        </p>
+
+        <div class="grid">
+            <div class="card">
+                <h2>Nova função</h2>
+                <p class="help">
+                    Ex: Garçom, Caixa, Gerente, Estoque, Cozinha, Freela sábado.
+                </p>
+
+                <form method="post">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="create_role">
+
+                    <label for="role_name">Nome da função</label>
+                    <input type="text" name="role_name" id="role_name" required placeholder="Ex: Garçom">
+
+                    <div class="permissions-grid">
+                        {% for permission in permission_fields %}
+                            <label class="switch-row">
+                                <span>{{ permission.label }}</span>
+                                <input type="checkbox" name="{{ permission.field }}">
+                            </label>
+                        {% endfor %}
+                    </div>
+
+                    <button type="submit">Criar função</button>
+                </form>
+            </div>
+
+            <div class="card">
+                <h2>Novo funcionário</h2>
+                <p class="help">
+                    Se deixar a senha vazia, o sistema usa 123.
+                </p>
+
+                <form method="post">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="create_employee">
+
+                    <label for="username">Usuário</label>
+                    <input type="text" name="username" id="username" required placeholder="Ex: garcom01">
+
+                    <label for="first_name">Nome visível</label>
+                    <input type="text" name="first_name" id="first_name" placeholder="Ex: João">
+
+                    <label for="password">Senha</label>
+                    <input type="text" name="password" id="password" placeholder="Ex: 123">
+
+                    <label for="role_template">Função</label>
+                    <select name="role_template" id="role_template">
+                        <option value="">Sem função personalizada</option>
+                        {% for role in roles %}
+                            <option value="{{ role.id }}">{{ role.name }}</option>
+                        {% endfor %}
+                    </select>
+
+                    <label class="switch-row">
+                        <span>Pode acessar Admin Django</span>
+                        <input type="checkbox" name="is_staff">
+                    </label>
+
+                    <button type="submit" class="secondary-button">Criar funcionário</button>
+                </form>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>Funcionários cadastrados</h2>
+            <p class="help">
+                Abra um funcionário para ajustar função e permissões individuais.
+            </p>
+        </div>
+
+        {% for row in profile_rows %}
+            <details>
+                <summary>
+                    {{ row.profile.user.username }}
+                    {% if row.profile.user.first_name %}
+                        - {{ row.profile.user.first_name }}
+                    {% endif %}
+                </summary>
+
+                <div class="employee-meta">
+                    Função atual:
+                    {% if row.profile.role_template %}
+                        {{ row.profile.role_template.name }}
+                    {% else %}
+                        {{ row.profile.get_role_display }}
+                    {% endif %}
+                    <br>
+                    Ativo: {{ row.profile.user.is_active }}
+                    |
+                    Staff/Admin: {{ row.profile.user.is_staff }}
+                </div>
+
+                <form method="post">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="update_profile">
+                    <input type="hidden" name="profile_id" value="{{ row.profile.id }}">
+
+                    <label>Função</label>
+                    <select name="role_template">
+                        <option value="">Sem função personalizada</option>
+                        {% for role in roles %}
+                            <option value="{{ role.id }}" {% if role.id == row.role_template_id %}selected{% endif %}>
+                                {{ role.name }}
+                            </option>
+                        {% endfor %}
+                    </select>
+
+                    <div class="permissions-grid">
+                        <label class="switch-row">
+                            <span>Usuário ativo</span>
+                            <input type="checkbox" name="is_active" {% if row.profile.user.is_active %}checked{% endif %}>
+                        </label>
+
+                        <label class="switch-row">
+                            <span>Acessa Admin Django</span>
+                            <input type="checkbox" name="is_staff" {% if row.profile.user.is_staff %}checked{% endif %}>
+                        </label>
+
+                        {% for permission in row.permissions %}
+                            <label class="switch-row">
+                                <span>{{ permission.label }}</span>
+                                <input type="checkbox" name="{{ permission.field }}" {% if permission.value %}checked{% endif %}>
+                            </label>
+                        {% endfor %}
+                    </div>
+
+                    <div class="inline-buttons">
+                        <button type="submit">Salvar permissões</button>
+                    </div>
+                </form>
+
+                <form method="post" style="margin-top: 10px;">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="apply_role_to_profile">
+                    <input type="hidden" name="profile_id" value="{{ row.profile.id }}">
+
+                    <button type="submit" class="secondary-button">
+                        Aplicar permissões padrão da função
+                    </button>
+                </form>
+            </details>
+        {% empty %}
+            <div class="card">
+                Nenhum funcionário cadastrado ainda.
+            </div>
+        {% endfor %}
+    </div>
+</body>
+</html>

@@ -1,0 +1,528 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <title>Estoque Geral</title>
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: #f4f4f5;
+            margin: 0;
+            padding: 24px;
+            color: #111827;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .top-links {
+            margin-bottom: 20px;
+        }
+
+        .top-links a {
+            color: #2563eb;
+            font-weight: bold;
+            margin-right: 14px;
+            text-decoration: none;
+        }
+
+        h1 {
+            margin-bottom: 6px;
+        }
+
+        .subtitle {
+            color: #555;
+            margin-bottom: 20px;
+        }
+
+        .actions-top {
+            margin-bottom: 18px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        .action-link {
+            background: #2563eb;
+            color: white;
+            padding: 10px 12px;
+            border-radius: 8px;
+            text-decoration: none;
+            font-weight: bold;
+            font-size: 14px;
+        }
+
+        .action-link.secondary {
+            background: #059669;
+        }
+
+        .filters-card {
+            background: white;
+            border-radius: 14px;
+            padding: 18px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.06);
+            margin-bottom: 18px;
+        }
+
+        .search-input {
+            width: 100%;
+            box-sizing: border-box;
+            padding: 14px;
+            border: 2px solid #d1d5db;
+            border-radius: 10px;
+            font-size: 17px;
+            margin-bottom: 14px;
+        }
+
+        .filter-group {
+            margin-bottom: 14px;
+        }
+
+        .filter-title {
+            font-weight: bold;
+            margin-bottom: 8px;
+        }
+
+        .filter-buttons {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
+        .filter-button {
+            border: 1px solid #d1d5db;
+            background: #f9fafb;
+            color: #111827;
+            border-radius: 999px;
+            padding: 8px 12px;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 13px;
+        }
+
+        .filter-button.active {
+            background: #2563eb;
+            color: white;
+            border-color: #2563eb;
+        }
+
+        .filter-button.danger.active {
+            background: #dc2626;
+            border-color: #dc2626;
+        }
+
+        .counter {
+            color: #6b7280;
+            font-size: 14px;
+            margin-top: 10px;
+        }
+
+        .card {
+            background: white;
+            border-radius: 14px;
+            padding: 18px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.06);
+            overflow-x: auto;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            min-width: 920px;
+        }
+
+        th {
+            background: #1f2937;
+            color: white;
+            text-align: left;
+            padding: 12px;
+            font-size: 14px;
+            position: sticky;
+            top: 0;
+        }
+
+        td {
+            padding: 12px;
+            border-bottom: 1px solid #e5e7eb;
+            font-size: 14px;
+        }
+
+        tr:hover td {
+            background: #f9fafb;
+        }
+
+        .product-name {
+            font-weight: bold;
+        }
+
+        .muted {
+            color: #6b7280;
+            font-size: 12px;
+        }
+
+        .money {
+            font-weight: bold;
+        }
+
+        .ok {
+            color: green;
+            font-weight: bold;
+        }
+
+        .low {
+            color: #b7791f;
+            font-weight: bold;
+        }
+
+        .empty {
+            color: red;
+            font-weight: bold;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 5px 8px;
+            border-radius: 999px;
+            font-size: 12px;
+            font-weight: bold;
+            background: #e5e7eb;
+            color: #374151;
+        }
+
+        .no-results {
+            display: none;
+            background: #fef3c7;
+            color: #92400e;
+            padding: 16px;
+            border-radius: 10px;
+            font-weight: bold;
+            margin-top: 12px;
+        }
+
+        .messages {
+            margin-bottom: 18px;
+        }
+
+        .message {
+            background: white;
+            border-left: 5px solid #2563eb;
+            padding: 12px 16px;
+            border-radius: 8px;
+            margin-bottom: 8px;
+            font-weight: bold;
+        }
+
+        @media (max-width: 700px) {
+            body {
+                padding: 14px;
+            }
+
+            .action-link {
+                width: 100%;
+                text-align: center;
+            }
+
+            .search-input {
+                font-size: 15px;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        {% include "includes/main_menu.html" %}
+
+        {% if messages %}
+            <div class="messages">
+                {% for message in messages %}
+                    <div class="message">{{ message }}</div>
+                {% endfor %}
+            </div>
+        {% endif %}
+
+        <h1>Estoque Geral</h1>
+        <p class="subtitle">
+            Busque, filtre por categoria e acompanhe custo, lucro e status dos produtos.
+        </p>
+
+        {% if can_create_stock_entry %}
+            <div class="actions-top">
+                <a href="/produtos/novo/" class="action-link">
+                    + Novo produto
+                </a>
+
+                <a href="/estoque/entrada/" class="action-link secondary">
+                    + Nova entrada de estoque
+                </a>
+            </div>
+        {% endif %}
+
+        <div class="filters-card">
+            <input
+                type="text"
+                id="stock_search"
+                class="search-input"
+                placeholder="Buscar por produto, categoria, unidade, 600ml, cerveja, batata..."
+                oninput="applyFilters()"
+                autocomplete="off"
+            >
+
+            <div class="filter-group">
+                <div class="filter-title">Categorias</div>
+                <div class="filter-buttons" id="category_buttons">
+                    <button type="button" class="filter-button active" onclick="setCategoryFilter('all', this)">
+                        Todos
+                    </button>
+                </div>
+            </div>
+
+            <div class="filter-group">
+                <div class="filter-title">Status</div>
+                <div class="filter-buttons">
+                    <button type="button" class="filter-button active" onclick="setStatusFilter('all', this)">
+                        Todos
+                    </button>
+
+                    <button type="button" class="filter-button" onclick="setStatusFilter('ok', this)">
+                        Disponível
+                    </button>
+
+                    <button type="button" class="filter-button" onclick="setStatusFilter('low', this)">
+                        Baixo
+                    </button>
+
+                    <button type="button" class="filter-button" onclick="setStatusFilter('empty', this)">
+                        Esgotado
+                    </button>
+
+                    <button type="button" class="filter-button danger" onclick="setStatusFilter('critical', this)">
+                        Críticos
+                    </button>
+                </div>
+            </div>
+
+            <div class="counter" id="results_counter"></div>
+        </div>
+
+        <div class="card">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Produto</th>
+                        <th>Categoria</th>
+                        <th>Estoque</th>
+                        <th>Custo médio</th>
+                        <th>Preço venda</th>
+                        <th>Lucro/un.</th>
+                        <th>Capital em estoque</th>
+                        <th>Lucro potencial</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+
+                <tbody id="stock_table_body">
+                    {% for product in products %}
+                        {% if product.current_stock <= 0 %}
+                            <tr
+                                class="stock-row"
+                                data-category="{{ product.category|default:'Sem categoria'|escapejs }}"
+                                data-status="empty"
+                                data-search="{{ product.name|lower }} {{ product.category|default:''|lower }} {{ product.unit|lower }} esgotado zerado sem estoque {{ product.sale_price }}"
+                            >
+                        {% elif product.current_stock <= product.minimum_quantity %}
+                            <tr
+                                class="stock-row"
+                                data-category="{{ product.category|default:'Sem categoria'|escapejs }}"
+                                data-status="low"
+                                data-search="{{ product.name|lower }} {{ product.category|default:''|lower }} {{ product.unit|lower }} baixo critico crítico {{ product.sale_price }}"
+                            >
+                        {% else %}
+                            <tr
+                                class="stock-row"
+                                data-category="{{ product.category|default:'Sem categoria'|escapejs }}"
+                                data-status="ok"
+                                data-search="{{ product.name|lower }} {{ product.category|default:''|lower }} {{ product.unit|lower }} disponivel disponível estoque {{ product.sale_price }}"
+                            >
+                        {% endif %}
+                            <td>
+                                <div class="product-name">{{ product.name }}</div>
+                                <div class="muted">
+                                    Unidade: {{ product.unit }}
+                                </div>
+                            </td>
+
+                            <td>
+                                <span class="badge">
+                                    {{ product.category|default:"Sem categoria" }}
+                                </span>
+                            </td>
+
+                            <td>
+                                {{ product.current_stock|floatformat:2 }}
+                                {{ product.unit }}
+                            </td>
+
+                            <td class="money">
+                                R$ {{ product.average_cost|floatformat:2 }}
+                            </td>
+
+                            <td class="money">
+                                R$ {{ product.sale_price|floatformat:2 }}
+                            </td>
+
+                            <td class="money">
+                                R$ {{ product.profit_per_unit|floatformat:2 }}
+                            </td>
+
+                            <td class="money">
+                                R$ {{ product.stock_value|floatformat:2 }}
+                            </td>
+
+                            <td class="money">
+                                R$ {{ product.potential_profit|floatformat:2 }}
+                            </td>
+
+                            <td>
+                                {% if product.current_stock <= 0 %}
+                                    <span class="empty">Esgotado</span>
+                                {% elif product.current_stock <= product.minimum_quantity %}
+                                    <span class="low">Baixo</span>
+                                {% else %}
+                                    <span class="ok">Disponível</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                    {% empty %}
+                        <tr>
+                            <td colspan="9">Nenhum produto cadastrado ainda.</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+
+            <div id="no_results" class="no-results">
+                Nenhum produto encontrado com esses filtros.
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentCategory = "all";
+        let currentStatus = "all";
+
+        function normalizeText(text) {
+            return String(text || "")
+                .toLowerCase()
+                .normalize("NFD")
+                .replace(/[\u0300-\u036f]/g, "")
+                .replace(",", ".");
+        }
+
+        function buildCategoryButtons() {
+            const rows = document.querySelectorAll(".stock-row");
+            const container = document.getElementById("category_buttons");
+
+            const categories = new Set();
+
+            rows.forEach(row => {
+                const category = row.dataset.category || "Sem categoria";
+                categories.add(category);
+            });
+
+            const sortedCategories = Array.from(categories).sort((a, b) => {
+                return a.localeCompare(b, "pt-BR");
+            });
+
+            sortedCategories.forEach(category => {
+                const button = document.createElement("button");
+                button.type = "button";
+                button.className = "filter-button";
+                button.innerText = category;
+
+                button.onclick = function () {
+                    setCategoryFilter(category, button);
+                };
+
+                container.appendChild(button);
+            });
+        }
+
+        function setCategoryFilter(category, clickedButton) {
+            currentCategory = category;
+
+            const buttons = document.querySelectorAll("#category_buttons .filter-button");
+
+            buttons.forEach(button => {
+                button.classList.remove("active");
+            });
+
+            clickedButton.classList.add("active");
+
+            applyFilters();
+        }
+
+        function setStatusFilter(status, clickedButton) {
+            currentStatus = status;
+
+            const buttons = clickedButton.parentElement.querySelectorAll(".filter-button");
+
+            buttons.forEach(button => {
+                button.classList.remove("active");
+            });
+
+            clickedButton.classList.add("active");
+
+            applyFilters();
+        }
+
+        function applyFilters() {
+            const query = normalizeText(document.getElementById("stock_search").value);
+            const rows = document.querySelectorAll(".stock-row");
+            const noResults = document.getElementById("no_results");
+            const counter = document.getElementById("results_counter");
+
+            let visibleCount = 0;
+            let totalCount = rows.length;
+
+            rows.forEach(row => {
+                const searchable = normalizeText(row.dataset.search);
+                const category = row.dataset.category || "Sem categoria";
+                const status = row.dataset.status;
+
+                const matchesSearch = query === "" || searchable.includes(query);
+                const matchesCategory = currentCategory === "all" || category === currentCategory;
+
+                let matchesStatus = false;
+
+                if (currentStatus === "all") {
+                    matchesStatus = true;
+                } else if (currentStatus === "critical") {
+                    matchesStatus = status === "low" || status === "empty";
+                } else {
+                    matchesStatus = status === currentStatus;
+                }
+
+                const shouldShow = matchesSearch && matchesCategory && matchesStatus;
+
+                if (shouldShow) {
+                    row.style.display = "";
+                    visibleCount += 1;
+                } else {
+                    row.style.display = "none";
+                }
+            });
+
+            noResults.style.display = visibleCount === 0 ? "block" : "none";
+
+            counter.innerText = `${visibleCount} de ${totalCount} produtos exibidos`;
+        }
+
+        buildCategoryButtons();
+        applyFilters();
+    </script>
+</body>
+</html>
