@@ -1,4 +1,4 @@
-# 🍻 SaaS de Gestão para Bares
+# SaaS de Gestão para Bares
 
 Sistema web desenvolvido em Django para gerenciamento operacional de bares, com foco em controle de estoque, vendas, financeiro e operação diária.
 
