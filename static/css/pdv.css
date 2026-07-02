@@ -2,6 +2,10 @@
    Base
 ========================== */
 
+* {
+    box-sizing: border-box;
+}
+
 body {
     margin: 0;
     padding: 16px;
@@ -29,11 +33,10 @@ h1 {
     gap: 20px;
 }
 
-
-/*espaço para itens acima do carrinho corrigir*/
+/* espaço para os produtos não ficarem atrás do carrinho */
 main {
     width: 100%;
-    padding-bottom: 420px;
+    padding-bottom: calc(40vh + 32px);
 }
 
 .cart {
@@ -105,22 +108,76 @@ main {
     border-radius: 18px 18px 0 0;
     padding: 18px;
     box-shadow: 0 -4px 16px rgba(0,0,0,.12);
-align-items: center;
+
     position: fixed;
 
     left: 0;
     right: 0;
     bottom: 0;
 
-    max-height: 40vh;
-    overflow-y: auto;
+    max-height: 78vh;
+    overflow: hidden;
 
     z-index: 1000;
-
 }
 
 .cart h2 {
     margin-top: 0;
+}
+
+.cart-summary {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+}
+
+.cart-summary-values {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.cart-summary-values span {
+    color: #6b7280;
+    font-size: 14px;
+}
+
+.cart-summary-values strong {
+    font-size: 18px;
+}
+
+.cart-toggle-button {
+    border: none;
+    background: #111827;
+    color: white;
+    border-radius: 10px;
+    padding: 10px 12px;
+    cursor: pointer;
+    font-weight: bold;
+}
+
+.cart-content {
+    display: none;
+    margin-top: 16px;
+}
+
+/* funciona se o JS adicionar classe no carrinho */
+.cart.is-open .cart-content,
+.cart.open .cart-content,
+.cart.expanded .cart-content {
+    display: block;
+}
+
+/* funciona se o JS apenas trocar aria-expanded para true */
+.cart:has(.cart-toggle-button[aria-expanded="true"]) .cart-content {
+    display: block;
+}
+
+#cart-form {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
 }
 
 .field {
@@ -142,6 +199,45 @@ align-items: center;
     border-radius: 8px;
 
     font-size: 15px;
+}
+
+.cart-items-scroll {
+    max-height: 24vh;
+    overflow-y: auto;
+    padding-right: 4px;
+}
+
+.cart-footer {
+    background: white;
+    padding-top: 12px;
+}
+
+.cart-footer-actions {
+    display: grid;
+    grid-template-columns: 1fr 2fr;
+    gap: 10px;
+}
+
+.clear-cart-button {
+    width: 100%;
+
+    border: none;
+
+    background: #fee2e2;
+    color: #991b1b;
+
+    border-radius: 10px;
+
+    padding: 15px;
+
+    font-size: 16px;
+    font-weight: bold;
+
+    cursor: pointer;
+}
+
+.clear-cart-button:hover {
+    background: #fecaca;
 }
 
 /* ==========================
@@ -251,13 +347,15 @@ align-items: center;
 @media (min-width:1024px){
 
     body {
-    margin: 0;
-    padding: 16px;
-    padding-bottom: 48vh;
+        margin: 0;
+        padding: 16px;
+    }
+
+    main {
+        padding-bottom: 0;
     }
 
     .layout{
-
         display:grid;
 
         grid-template-columns:1fr 360px;
@@ -268,23 +366,36 @@ align-items: center;
     }
 
     .product-grid{
-
         grid-template-columns:repeat(auto-fill,minmax(160px,1fr));
-
     }
 
     .cart{
-    position: sticky;
+        position: sticky;
 
-    top: 24px;
+        top: 24px;
 
-    max-height: calc(100vh - 48px);
+        max-height: calc(100vh - 48px);
 
-    overflow-y: auto;
+        overflow-y: auto;
 
-    border-radius: 14px;
+        border-radius: 14px;
 
-    box-shadow: 0 2px 10px rgba(0,0,0,.06);
-}
+        box-shadow: 0 2px 10px rgba(0,0,0,.06);
+    }
+
+    .cart-summary {
+        display: none;
+    }
+
+    .cart-content {
+        display: block;
+        margin-top: 0;
+    }
+
+    .cart-items-scroll {
+        max-height: none;
+        overflow-y: visible;
+        padding-right: 0;
+    }
 
 }
