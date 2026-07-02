@@ -1,0 +1,85 @@
+.page-shell {
+    max-width: 760px;
+}
+
+.product-form-card {
+    background: white;
+    border-radius: 14px;
+    padding: 22px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.06);
+}
+
+.product-form-card h1 {
+    margin-top: 0;
+    margin-bottom: 6px;
+}
+
+.product-form-card .subtitle {
+    color: #6b7280;
+    margin-bottom: 22px;
+}
+
+.product-form-card label {
+    display: block;
+    font-weight: bold;
+    margin-bottom: 6px;
+}
+
+.product-form-card input,
+.product-form-card select {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 12px;
+    border: 1px solid #d1d5db;
+    border-radius: 10px;
+    font-size: 15px;
+    margin-bottom: 16px;
+}
+
+.checkbox-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 18px;
+}
+
+.product-form-card .checkbox-row input {
+    width: auto;
+    margin: 0;
+}
+
+.product-form-card .checkbox-row label {
+    margin-bottom: 0;
+}
+
+.help {
+    color: #6b7280;
+    font-size: 13px;
+    margin-top: -10px;
+    margin-bottom: 16px;
+}
+
+.product-form-card button {
+    width: 100%;
+    border: none;
+    background: #2563eb;
+    color: white;
+    border-radius: 10px;
+    padding: 14px;
+    font-size: 16px;
+    font-weight: bold;
+    cursor: pointer;
+}
+
+.product-form-card button:hover {
+    background: #1d4ed8;
+}
+
+.warning-box {
+    background: #fef3c7;
+    color: #92400e;
+    padding: 14px;
+    border-radius: 10px;
+    margin-bottom: 18px;
+    font-weight: bold;
+}
