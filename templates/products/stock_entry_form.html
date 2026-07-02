@@ -1,441 +1,130 @@
-<!DOCTYPE html>
-<html lang="pt-br">
-<head>
-    <meta charset="UTF-8">
-    <title>Nova entrada de estoque</title>
+{% extends "base.html" %}
+{% load static %}
 
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            background: #f4f4f5;
-            margin: 0;
-            padding: 24px;
-            color: #111827;
-        }
+{% block title %}Nova entrada de estoque{% endblock %}
 
-        .container {
-            max-width: 900px;
-            margin: 0 auto;
-        }
+{% block extra_css %}
+    <link rel="stylesheet" href="{% static 'css/stock_entry_form.css' %}">
+{% endblock %}
 
-        .top-links {
-            margin-bottom: 20px;
-        }
+{% block content %}
+    {% if messages %}
+        <div class="messages">
+            {% for message in messages %}
+                <div class="message">{{ message }}</div>
+            {% endfor %}
+        </div>
+    {% endif %}
 
-        .top-links a {
-            color: #2563eb;
-            font-weight: bold;
-            margin-right: 14px;
-            text-decoration: none;
-        }
+    <div class="stock-entry-card">
+        <h1>Nova entrada de estoque</h1>
+        <p class="subtitle">
+            Busque o produto, selecione e lance a compra ou reposição.
+        </p>
 
-        .card {
-            background: white;
-            border-radius: 14px;
-            padding: 22px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.06);
-            margin-bottom: 18px;
-        }
+        <form method="post" id="stock_entry_form">
+            {% csrf_token %}
 
-        h1 {
-            margin-top: 0;
-            margin-bottom: 6px;
-        }
+            <label for="product_search">Buscar produto</label>
+            <input
+                type="text"
+                id="product_search"
+                class="search-input"
+                placeholder="Ex: original, 600ml, cerveja, batata, jack..."
+                autocomplete="off"
+            >
 
-        .subtitle {
-            color: #6b7280;
-            margin-bottom: 22px;
-        }
+            <div class="quick-tips">
+                Dica: a busca procura por nome, categoria, unidade e preço.
+                Exemplo: “600”, “cerveja”, “porção”, “heineken”, “original”.
+            </div>
 
-        label {
-            display: block;
-            font-weight: bold;
-            margin-bottom: 6px;
-        }
+            <input type="hidden" name="product" id="selected_product_id">
 
-        input,
-        textarea {
-            width: 100%;
-            box-sizing: border-box;
-            padding: 12px;
-            border: 1px solid #d1d5db;
-            border-radius: 10px;
-            font-size: 15px;
-            margin-bottom: 16px;
-        }
+            <div id="selected_product_box" class="selected-product"></div>
 
-        textarea {
-            min-height: 90px;
-            resize: vertical;
-        }
+            <div id="no_results" class="no-results">
+                Nenhum produto encontrado. Tente outro termo ou cadastre um novo produto.
+            </div>
 
-        .search-input {
-            font-size: 18px;
-            padding: 14px;
-            border: 2px solid #d1d5db;
-        }
-
-        .selected-product {
-            background: #eff6ff;
-            border: 2px solid #2563eb;
-            color: #1e40af;
-            padding: 14px;
-            border-radius: 12px;
-            margin-bottom: 16px;
-            font-weight: bold;
-            display: none;
-        }
-
-        .product-results {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
-            gap: 10px;
-            max-height: 320px;
-            overflow-y: auto;
-            padding: 4px;
-            margin-bottom: 18px;
-        }
-
-        .product-card {
-            border: 2px solid #e5e7eb;
-            background: #f9fafb;
-            border-radius: 12px;
-            padding: 14px;
-            cursor: pointer;
-            text-align: left;
-            transition: 0.15s;
-        }
-
-        .product-card:hover {
-            border-color: #2563eb;
-            background: #eff6ff;
-        }
-
-        .product-card.selected {
-            border-color: #2563eb;
-            background: #dbeafe;
-        }
-
-        .product-name {
-            color: #000;
-            font-weight: bold;
-            margin-bottom: 5px;
-        }
-
-        .product-meta {
-            color: #6b7280;
-            font-size: 13px;
-            line-height: 1.4;
-        }
-
-        .no-results {
-            display: none;
-            background: #fef3c7;
-            color: #92400e;
-            padding: 14px;
-            border-radius: 10px;
-            margin-bottom: 18px;
-            font-weight: bold;
-        }
-
-        .mode-box {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 12px;
-            margin-bottom: 18px;
-        }
-
-        .mode-option {
-            border: 2px solid #e5e7eb;
-            border-radius: 12px;
-            padding: 14px;
-            cursor: pointer;
-            background: #f9fafb;
-        }
-
-        .mode-option input {
-            width: auto;
-            margin-right: 8px;
-            margin-bottom: 0;
-        }
-
-        .help {
-            color: #6b7280;
-            font-size: 13px;
-            margin-top: -10px;
-            margin-bottom: 16px;
-        }
-
-        .hidden {
-            display: none;
-        }
-
-        button {
-            width: 100%;
-            border: none;
-            background: #2563eb;
-            color: white;
-            border-radius: 10px;
-            padding: 14px;
-            font-size: 16px;
-            font-weight: bold;
-            cursor: pointer;
-        }
-
-        button:hover {
-            background: #1d4ed8;
-        }
-
-        button:disabled {
-            background: #9ca3af;
-            cursor: not-allowed;
-        }
-
-        .messages {
-            margin-bottom: 18px;
-        }
-
-        .message {
-            background: white;
-            border-left: 5px solid #2563eb;
-            padding: 12px 16px;
-            border-radius: 8px;
-            margin-bottom: 8px;
-            font-weight: bold;
-        }
-
-        .quick-tips {
-            background: #f9fafb;
-            border-radius: 10px;
-            padding: 12px;
-            color: #4b5563;
-            font-size: 14px;
-            margin-bottom: 16px;
-        }
-
-        @media (max-width: 700px) {
-            body {
-                padding: 14px;
-            }
-
-            .mode-box {
-                grid-template-columns: 1fr;
-            }
-
-            .product-results {
-                grid-template-columns: 1fr;
-                max-height: 360px;
-            }
-        }
-    </style>
-</head>
-
-<body>
-    <div class="container">
-       {% include "includes/main_menu.html" %}
-
-        {% if messages %}
-            <div class="messages">
-                {% for message in messages %}
-                    <div class="message">{{ message }}</div>
+            <div class="product-results" id="product_results">
+                {% for product in products %}
+                    <button
+                        type="button"
+                        class="product-card"
+                        data-id="{{ product.id }}"
+                        data-name="{{ product.name|escapejs }}"
+                        data-category="{{ product.category|default:'Sem categoria'|escapejs }}"
+                        data-unit="{{ product.unit|escapejs }}"
+                        data-price="{{ product.sale_price|floatformat:2 }}"
+                        data-search="{{ product.name|lower }} {{ product.category|default:''|lower }} {{ product.unit|lower }} {{ product.sale_price }}"
+                    >
+                        <div class="product-name">{{ product.name }}</div>
+                        <div class="product-meta">
+                            {{ product.category|default:"Sem categoria" }}<br>
+                            Unidade: {{ product.unit }}<br>
+                            Venda: R$ {{ product.sale_price|floatformat:2 }}
+                        </div>
+                    </button>
+                {% empty %}
+                    <p>Nenhum produto ativo cadastrado.</p>
                 {% endfor %}
             </div>
-        {% endif %}
 
-        <div class="card">
-            <h1>Nova entrada de estoque</h1>
-            <p class="subtitle">
-                Busque o produto, selecione e lance a compra ou reposição.
-            </p>
+            <label>Tipo de entrada</label>
 
-            <form method="post" onsubmit="return validateSelectedProduct()">
-                {% csrf_token %}
-
-                <label for="product_search">Buscar produto</label>
-                <input
-                    type="text"
-                    id="product_search"
-                    class="search-input"
-                    placeholder="Ex: original, 600ml, cerveja, batata, jack..."
-                    autocomplete="off"
-                    oninput="filterProducts()"
-                >
-
-                <div class="quick-tips">
-                    Dica: a busca procura por nome, categoria, unidade e preço.  
-                    Exemplo: “600”, “cerveja”, “porção”, “heineken”, “original”.
-                </div>
-
-                <input type="hidden" name="product" id="selected_product_id">
-
-                <div id="selected_product_box" class="selected-product"></div>
-
-                <div id="no_results" class="no-results">
-                    Nenhum produto encontrado. Tente outro termo ou cadastre um novo produto.
-                </div>
-
-                <div class="product-results" id="product_results">
-                    {% for product in products %}
-                        <button
-                            type="button"
-                            class="product-card"
-                            data-id="{{ product.id }}"
-                            data-name="{{ product.name|escapejs }}"
-                            data-category="{{ product.category|default:'Sem categoria'|escapejs }}"
-                            data-unit="{{ product.unit|escapejs }}"
-                            data-price="{{ product.sale_price|floatformat:2 }}"
-                            data-search="{{ product.name|lower }} {{ product.category|default:''|lower }} {{ product.unit|lower }} {{ product.sale_price }}"
-                            onclick="selectProduct(this)"
-                        >
-                            <div class="product-name">{{ product.name }}</div>
-                            <div class="product-meta">
-                                {{ product.category|default:"Sem categoria" }}<br>
-                                Unidade: {{ product.unit }}<br>
-                                Venda: R$ {{ product.sale_price|floatformat:2 }}
-                            </div>
-                        </button>
-                    {% empty %}
-                        <p>Nenhum produto ativo cadastrado.</p>
-                    {% endfor %}
-                </div>
-
-                <label>Tipo de entrada</label>
-
-                <div class="mode-box">
-                    <label class="mode-option">
-                        <input type="radio" name="entry_mode" value="simple" checked onchange="toggleMode()">
-                        Entrada simples
-                        <div class="help" style="margin-top: 8px;">
-                            Ex: investi R$ 150 e renderam 30 porções.
-                        </div>
-                    </label>
-
-                    <label class="mode-option">
-                        <input type="radio" name="entry_mode" value="detailed" onchange="toggleMode()">
-                        Entrada detalhada
-                        <div class="help" style="margin-top: 8px;">
-                            Ex: 6 caixas de R$ 120 renderam 72 unidades.
-                        </div>
-                    </label>
-                </div>
-
-                <div id="simple-fields">
-                    <label for="total_cost">Valor investido</label>
-                    <input type="text" name="total_cost" id="total_cost" placeholder="Ex: 150.00">
-                    <div class="help">Use ponto ou vírgula. Ex: 150,00</div>
-                </div>
-
-                <div id="detailed-fields" class="hidden">
-                    <label for="package_quantity">Quantidade de pacotes/caixas/sacos</label>
-                    <input type="text" name="package_quantity" id="package_quantity" placeholder="Ex: 6">
-
-                    <label for="package_cost">Valor por pacote/caixa/saco</label>
-                    <input type="text" name="package_cost" id="package_cost" placeholder="Ex: 25.00">
-
-                    <div class="help">
-                        O sistema calcula automaticamente o valor investido.
+            <div class="mode-box">
+                <label class="mode-option">
+                    <input type="radio" name="entry_mode" value="simple" checked>
+                    Entrada simples
+                    <div class="help mode-help">
+                        Ex: investi R$ 150 e renderam 30 porções.
                     </div>
-                </div>
+                </label>
 
-                <label for="quantity_added">Quantidade gerada/adicionada</label>
-                <input type="text" name="quantity_added" id="quantity_added" required placeholder="Ex: 30">
+                <label class="mode-option">
+                    <input type="radio" name="entry_mode" value="detailed">
+                    Entrada detalhada
+                    <div class="help mode-help">
+                        Ex: 6 caixas de R$ 120 renderam 72 unidades.
+                    </div>
+                </label>
+            </div>
+
+            <div id="simple-fields">
+                <label for="total_cost">Valor investido</label>
+                <input type="text" name="total_cost" id="total_cost" placeholder="Ex: 150.00">
+                <div class="help">Use ponto ou vírgula. Ex: 150,00</div>
+            </div>
+
+            <div id="detailed-fields" class="hidden">
+                <label for="package_quantity">Quantidade de pacotes/caixas/sacos</label>
+                <input type="text" name="package_quantity" id="package_quantity" placeholder="Ex: 6">
+
+                <label for="package_cost">Valor por pacote/caixa/saco</label>
+                <input type="text" name="package_cost" id="package_cost" placeholder="Ex: 25.00">
+
                 <div class="help">
-                    Exemplo: 30 porções, 24 unidades, 12 rolos, conforme a unidade cadastrada no produto.
+                    O sistema calcula automaticamente o valor investido.
                 </div>
+            </div>
 
-                <label for="notes">Observação</label>
-                <textarea name="notes" id="notes" placeholder="Ex: compra no atacado, fornecedor X, reposição para sábado..."></textarea>
+            <label for="quantity_added">Quantidade gerada/adicionada</label>
+            <input type="text" name="quantity_added" id="quantity_added" required placeholder="Ex: 30">
+            <div class="help">
+                Exemplo: 30 porções, 24 unidades, 12 rolos, conforme a unidade cadastrada no produto.
+            </div>
 
-                <button type="submit" id="submit_button">
-                    Salvar entrada de estoque
-                </button>
-            </form>
-        </div>
+            <label for="notes">Observação</label>
+            <textarea name="notes" id="notes" placeholder="Ex: compra no atacado, fornecedor X, reposição para sábado..."></textarea>
+
+            <button type="submit" id="submit_button">
+                Salvar entrada de estoque
+            </button>
+        </form>
     </div>
+{% endblock %}
 
-    <script>
-        function normalizeText(text) {
-            return String(text || "")
-                .toLowerCase()
-                .normalize("NFD")
-                .replace(/[\u0300-\u036f]/g, "")
-                .replace(",", ".");
-        }
-
-        function filterProducts() {
-            const query = normalizeText(document.getElementById("product_search").value);
-            const cards = document.querySelectorAll(".product-card");
-            const noResults = document.getElementById("no_results");
-
-            let visibleCount = 0;
-
-            cards.forEach(card => {
-                const searchable = normalizeText(card.dataset.search);
-
-                const shouldShow = query === "" || searchable.includes(query);
-
-                if (shouldShow) {
-                    card.style.display = "block";
-                    visibleCount += 1;
-                } else {
-                    card.style.display = "none";
-                }
-            });
-
-            noResults.style.display = visibleCount === 0 ? "block" : "none";
-        }
-
-        function selectProduct(card) {
-            const selectedId = card.dataset.id;
-            const selectedName = card.dataset.name;
-            const selectedCategory = card.dataset.category;
-            const selectedUnit = card.dataset.unit;
-            const selectedPrice = card.dataset.price;
-
-            document.getElementById("selected_product_id").value = selectedId;
-
-            const selectedBox = document.getElementById("selected_product_box");
-            selectedBox.style.display = "block";
-            selectedBox.innerHTML = `
-                Produto selecionado: ${selectedName}
-                <br>
-                <small>${selectedCategory} · ${selectedUnit} · Venda R$ ${selectedPrice}</small>
-            `;
-
-            document.querySelectorAll(".product-card").forEach(item => {
-                item.classList.remove("selected");
-            });
-
-            card.classList.add("selected");
-        }
-
-        function validateSelectedProduct() {
-            const selectedProductId = document.getElementById("selected_product_id").value;
-
-            if (!selectedProductId) {
-                alert("Selecione um produto antes de salvar a entrada.");
-                return false;
-            }
-
-            return true;
-        }
-
-        function toggleMode() {
-            const selected = document.querySelector('input[name="entry_mode"]:checked').value;
-
-            const simpleFields = document.getElementById("simple-fields");
-            const detailedFields = document.getElementById("detailed-fields");
-
-            if (selected === "simple") {
-                simpleFields.classList.remove("hidden");
-                detailedFields.classList.add("hidden");
-            } else {
-                simpleFields.classList.add("hidden");
-                detailedFields.classList.remove("hidden");
-            }
-        }
-
-        filterProducts();
-    </script>
-</body>
-</html>
+{% block extra_js %}
+    <script src="{% static 'js/stock_entry_form.js' %}"></script>
+{% endblock %}
