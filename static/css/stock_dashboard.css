@@ -143,6 +143,10 @@
     background: #f9fafb;
 }
 
+.stock-mobile-list {
+    display: none;
+}
+
 .product-name {
     font-weight: bold;
 }
@@ -192,12 +196,223 @@
 }
 
 @media (max-width: 700px) {
-    .action-link {
+    .stock-dashboard {
         width: 100%;
+        min-width: 0;
+    }
+
+    .stock-dashboard h1 {
+        font-size: 26px;
+    }
+
+    .filters-card {
+        padding: 14px;
+        border-radius: 8px;
+    }
+
+    .action-link {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 100%;
+        min-height: 48px;
+        box-sizing: border-box;
         text-align: center;
     }
 
     .search-input {
+        min-height: 48px;
         font-size: 15px;
+    }
+
+    .filter-button {
+        min-height: 44px;
+        padding: 10px 14px;
+    }
+
+    .stock-card {
+        padding: 0;
+        background: transparent;
+        border-radius: 0;
+        box-shadow: none;
+        overflow: visible;
+    }
+
+    .stock-table {
+        display: none;
+    }
+
+    .stock-mobile-list {
+        display: grid;
+        gap: 12px;
+    }
+
+    .stock-mobile-card {
+        min-width: 0;
+        padding: 16px;
+        background: #ffffff;
+        border: 1px solid #d1d5db;
+        border-left: 5px solid #16a34a;
+        border-radius: 8px;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+    }
+
+    .stock-mobile-card--low {
+        border-color: #f59e0b;
+        border-left-color: #d97706;
+        background: #fffbeb;
+    }
+
+    .stock-mobile-card--empty {
+        border-color: #fca5a5;
+        border-left-color: #dc2626;
+        background: #fef2f2;
+    }
+
+    .stock-mobile-card-header {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 12px;
+    }
+
+    .stock-mobile-product {
+        min-width: 0;
+    }
+
+    .stock-mobile-product h2 {
+        margin: 0;
+        font-size: 18px;
+        line-height: 1.3;
+        overflow-wrap: anywhere;
+    }
+
+    .stock-mobile-product-meta {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 6px 10px;
+        margin-top: 7px;
+        color: #6b7280;
+        font-size: 12px;
+    }
+
+    .stock-mobile-category {
+        padding: 4px 7px;
+        border-radius: 999px;
+        background: #e5e7eb;
+        color: #374151;
+        font-weight: bold;
+    }
+
+    .stock-mobile-status {
+        flex: 0 0 auto;
+        padding: 6px 8px;
+        border-radius: 999px;
+        font-size: 12px;
+        font-weight: bold;
+        white-space: nowrap;
+    }
+
+    .stock-mobile-status--ok {
+        background: #dcfce7;
+        color: #166534;
+    }
+
+    .stock-mobile-status--low {
+        background: #fef3c7;
+        color: #92400e;
+    }
+
+    .stock-mobile-status--empty {
+        background: #fee2e2;
+        color: #991b1b;
+    }
+
+    .stock-mobile-quantity-block {
+        margin-top: 16px;
+        padding: 14px;
+        border: 1px solid #e5e7eb;
+        border-radius: 8px;
+        background: #f9fafb;
+    }
+
+    .stock-mobile-quantity-block span,
+    .stock-mobile-metric span {
+        display: block;
+        color: #6b7280;
+        font-size: 12px;
+    }
+
+    .stock-mobile-quantity-block strong {
+        display: block;
+        margin-top: 2px;
+        color: #111827;
+        font-size: 25px;
+        line-height: 1.2;
+        overflow-wrap: anywhere;
+    }
+
+    .stock-mobile-card--low .stock-mobile-quantity-block strong {
+        color: #92400e;
+    }
+
+    .stock-mobile-card--empty .stock-mobile-quantity-block strong {
+        color: #991b1b;
+    }
+
+    .stock-mobile-quantity-block small {
+        display: block;
+        margin-top: 6px;
+        color: #6b7280;
+        font-size: 12px;
+    }
+
+    .stock-mobile-financial-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px;
+        margin-top: 12px;
+    }
+
+    .stock-mobile-metric {
+        min-width: 0;
+        padding: 10px;
+        border-radius: 8px;
+        background: #f3f4f6;
+    }
+
+    .stock-mobile-metric strong {
+        display: block;
+        margin-top: 3px;
+        font-size: 14px;
+        overflow-wrap: anywhere;
+    }
+
+    .stock-mobile-metric--sale {
+        background: #ecfdf5;
+    }
+
+    .stock-mobile-metric--sale strong {
+        color: #065f46;
+    }
+
+    .no-results {
+        margin-top: 0;
+    }
+}
+
+@media (max-width: 350px) {
+    .stock-mobile-card {
+        padding: 14px;
+    }
+
+    .stock-mobile-card-header {
+        display: grid;
+        grid-template-columns: 1fr;
+    }
+
+    .stock-mobile-status {
+        justify-self: start;
     }
 }

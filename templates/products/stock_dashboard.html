@@ -102,6 +102,8 @@
                         {% if product.current_stock <= 0 %}
                             <tr
                                 class="stock-row"
+                                data-product-id="{{ product.id }}"
+                                data-name="{{ product.name|escape }}"
                                 data-category="{{ product.category|default:'Sem categoria'|escapejs }}"
                                 data-status="empty"
                                 data-search="{{ product.name|lower }} {{ product.category|default:''|lower }} {{ product.unit|lower }} esgotado zerado sem estoque {{ product.sale_price }}"
@@ -109,6 +111,8 @@
                         {% elif product.current_stock <= product.minimum_quantity %}
                             <tr
                                 class="stock-row"
+                                data-product-id="{{ product.id }}"
+                                data-name="{{ product.name|escape }}"
                                 data-category="{{ product.category|default:'Sem categoria'|escapejs }}"
                                 data-status="low"
                                 data-search="{{ product.name|lower }} {{ product.category|default:''|lower }} {{ product.unit|lower }} baixo critico crítico {{ product.sale_price }}"
@@ -116,6 +120,8 @@
                         {% else %}
                             <tr
                                 class="stock-row"
+                                data-product-id="{{ product.id }}"
+                                data-name="{{ product.name|escape }}"
                                 data-category="{{ product.category|default:'Sem categoria'|escapejs }}"
                                 data-status="ok"
                                 data-search="{{ product.name|lower }} {{ product.category|default:''|lower }} {{ product.unit|lower }} disponivel disponível estoque {{ product.sale_price }}"
@@ -176,6 +182,84 @@
                     {% endfor %}
                 </tbody>
             </table>
+
+            <div class="stock-mobile-list" id="stock_mobile_list">
+                {% for product in products %}
+                    <article
+                        class="stock-mobile-card{% if product.current_stock <= 0 %} stock-mobile-card--empty{% elif product.current_stock <= product.minimum_quantity %} stock-mobile-card--low{% else %} stock-mobile-card--ok{% endif %}"
+                        data-product-id="{{ product.id }}"
+                        data-name="{{ product.name|escape }}"
+                        data-category="{{ product.category|default:'Sem categoria'|escapejs }}"
+                        data-status="{% if product.current_stock <= 0 %}empty{% elif product.current_stock <= product.minimum_quantity %}low{% else %}ok{% endif %}"
+                        data-search="{{ product.name|lower }} {{ product.category|default:''|lower }} {{ product.unit|lower }} {% if product.current_stock <= 0 %}esgotado zerado sem estoque{% elif product.current_stock <= product.minimum_quantity %}baixo critico crítico{% else %}disponivel disponível estoque{% endif %} {{ product.sale_price }}"
+                    >
+                        <div class="stock-mobile-card-header">
+                            <div class="stock-mobile-product">
+                                <h2>{{ product.name }}</h2>
+                                <div class="stock-mobile-product-meta">
+                                    <span class="stock-mobile-category">
+                                        {{ product.category|default:"Sem categoria" }}
+                                    </span>
+                                    {% if product.unit %}
+                                        <span>Unidade: {{ product.unit }}</span>
+                                    {% endif %}
+                                </div>
+                            </div>
+
+                            {% if product.current_stock <= 0 %}
+                                <span class="stock-mobile-status stock-mobile-status--empty">Esgotado</span>
+                            {% elif product.current_stock <= product.minimum_quantity %}
+                                <span class="stock-mobile-status stock-mobile-status--low">Estoque baixo</span>
+                            {% else %}
+                                <span class="stock-mobile-status stock-mobile-status--ok">Disponível</span>
+                            {% endif %}
+                        </div>
+
+                        <div class="stock-mobile-quantity-block">
+                            <span>Quantidade atual</span>
+                            <strong>
+                                {{ product.current_stock|floatformat:2 }}
+                                {{ product.unit }}
+                            </strong>
+
+                            {% if product.minimum_quantity %}
+                                <small>
+                                    Estoque mínimo:
+                                    {{ product.minimum_quantity|floatformat:2 }}
+                                    {{ product.unit }}
+                                </small>
+                            {% endif %}
+                        </div>
+
+                        <div class="stock-mobile-financial-grid">
+                            <div class="stock-mobile-metric stock-mobile-metric--sale">
+                                <span>Preço de venda</span>
+                                <strong>R$ {{ product.sale_price|floatformat:2 }}</strong>
+                            </div>
+
+                            <div class="stock-mobile-metric">
+                                <span>Custo médio</span>
+                                <strong>R$ {{ product.average_cost|floatformat:2 }}</strong>
+                            </div>
+
+                            <div class="stock-mobile-metric">
+                                <span>Lucro por unidade</span>
+                                <strong>R$ {{ product.profit_per_unit|floatformat:2 }}</strong>
+                            </div>
+
+                            <div class="stock-mobile-metric">
+                                <span>Capital em estoque</span>
+                                <strong>R$ {{ product.stock_value|floatformat:2 }}</strong>
+                            </div>
+
+                            <div class="stock-mobile-metric">
+                                <span>Lucro potencial</span>
+                                <strong>R$ {{ product.potential_profit|floatformat:2 }}</strong>
+                            </div>
+                        </div>
+                    </article>
+                {% endfor %}
+            </div>
 
             <div id="no_results" class="no-results">
                 Nenhum produto encontrado com esses filtros.

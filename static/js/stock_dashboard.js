@@ -69,6 +69,11 @@ function setStatusFilter(status, clickedButton) {
 function applyFilters() {
     const query = normalizeText(document.getElementById("stock_search").value);
     const rows = document.querySelectorAll(".stock-row");
+    const mobileCards = new Map(
+        Array.from(document.querySelectorAll(".stock-mobile-card")).map(card => {
+            return [card.dataset.productId, card];
+        })
+    );
     const noResults = document.getElementById("no_results");
     const counter = document.getElementById("results_counter");
 
@@ -94,12 +99,19 @@ function applyFilters() {
         }
 
         const shouldShow = matchesSearch && matchesCategory && matchesStatus;
+        const mobileCard = mobileCards.get(row.dataset.productId);
 
         if (shouldShow) {
             row.style.display = "";
+            if (mobileCard) {
+                mobileCard.style.display = "";
+            }
             visibleCount += 1;
         } else {
             row.style.display = "none";
+            if (mobileCard) {
+                mobileCard.style.display = "none";
+            }
         }
     });
 
