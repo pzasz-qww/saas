@@ -22,8 +22,8 @@
             Busque, filtre por categoria e acompanhe custo, lucro e status dos produtos.
         </p>
 
-        {% if can_create_stock_entry %}
-            <div class="actions-top">
+        <div class="actions-top">
+            {% if can_create_stock_entry %}
                 <a href="/produtos/novo/" class="action-link">
                     + Novo produto
                 </a>
@@ -31,8 +31,12 @@
                 <a href="/estoque/entrada/" class="action-link secondary">
                     + Nova entrada de estoque
                 </a>
-            </div>
-        {% endif %}
+            {% endif %}
+
+            <a href="{% url 'products:stock_report_pdf' %}" class="action-link">
+                Baixar PDF do estoque
+            </a>
+        </div>
 
         <div class="filters-card">
             <input
