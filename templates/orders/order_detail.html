@@ -9,7 +9,6 @@
 
 {% block content %}
     <div class="container">
-        
 
         {% if messages %}
             <div class="messages">
@@ -18,6 +17,86 @@
                 {% endfor %}
             </div>
         {% endif %}
+
+        <div class="card">
+            <div class="card-title-row">
+                <h2>Itens do pedido</h2>
+
+                <span class="card-title-meta">
+                    {{ order.created_by|default:"-" }} • {{ order.created_at }}
+                </span>
+            </div>
+
+            <div class="desktop-items-table">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Produto</th>
+                            <th>Quantidade</th>
+                            <th>Preço un.</th>
+                            <th>Total</th>
+                            <th>Observação</th>
+                        </tr>
+                    </thead>
+
+                    <tbody>
+                        {% for item in order.items.all %}
+                            <tr>
+                                <td>{{ item.product.name }}</td>
+                                <td>{{ item.quantity|floatformat:0 }}</td>
+                                <td>R$ {{ item.unit_price|floatformat:2 }}</td>
+                                <td>R$ {{ item.total_price|floatformat:2 }}</td>
+                                <td>{{ item.notes|default:"-" }}</td>
+                            </tr>
+                        {% empty %}
+                            <tr>
+                                <td colspan="5">Nenhum item no pedido.</td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="mobile-items-list">
+                {% for item in order.items.all %}
+                    <div class="mobile-item-card">
+                        <div class="mobile-item-name">
+                            {{ item.product.name }}
+                        </div>
+
+                        <div class="mobile-item-row">
+                            <span>Quantidade</span>
+                            <strong>{{ item.quantity|floatformat:0 }}</strong>
+                        </div>
+
+                        <div class="mobile-item-row">
+                            <span>Preço un.</span>
+                            <strong>R$ {{ item.unit_price|floatformat:2 }}</strong>
+                        </div>
+
+                        <div class="mobile-item-row mobile-item-total">
+                            <span>Total</span>
+                            <strong>R$ {{ item.total_price|floatformat:2 }}</strong>
+                        </div>
+
+                        {% if item.notes %}
+                            <div class="mobile-item-note">
+                                <span>Observação</span>
+                                <p>{{ item.notes }}</p>
+                            </div>
+                        {% endif %}
+                    </div>
+                {% empty %}
+                    <div class="mobile-item-empty">
+                        Nenhum item no pedido.
+                    </div>
+                {% endfor %}
+            </div>
+
+            <div class="total">
+                Total: R$ {{ order.total_amount|floatformat:2 }}
+            </div>
+        </div>
 
         <div class="card">
             <h1>Pedido #{{ order.id }}</h1>
@@ -76,42 +155,6 @@
                     <div class="label">Entregue em</div>
                     <div class="value">{{ order.delivered_at|default:"-" }}</div>
                 </div>
-            </div>
-        </div>
-
-        <div class="card">
-            <h2>Itens do pedido</h2>
-
-            <table>
-                <thead>
-                    <tr>
-                        <th>Produto</th>
-                        <th>Quantidade</th>
-                        <th>Preço un.</th>
-                        <th>Total</th>
-                        <th>Observação</th>
-                    </tr>
-                </thead>
-
-                <tbody>
-                    {% for item in order.items.all %}
-                        <tr>
-                            <td>{{ item.product.name }}</td>
-                            <td>{{ item.quantity|floatformat:0 }}</td>
-                            <td>R$ {{ item.unit_price|floatformat:2 }}</td>
-                            <td>R$ {{ item.total_price|floatformat:2 }}</td>
-                            <td>{{ item.notes|default:"-" }}</td>
-                        </tr>
-                    {% empty %}
-                        <tr>
-                            <td colspan="5">Nenhum item no pedido.</td>
-                        </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-
-            <div class="total">
-                Total: R$ {{ order.total_amount|floatformat:2 }}
             </div>
         </div>
 
