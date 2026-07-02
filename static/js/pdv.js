@@ -1,5 +1,11 @@
 let cart = [];
 
+const cartElement = document.getElementById("cart");
+const cartToggleButton = document.getElementById("cart-toggle-button");
+const cartSummaryCount = document.getElementById("cart-summary-count");
+const cartSummaryTotal = document.getElementById("cart-summary-total");
+const clearCartButton = document.getElementById("clear-cart-button");
+
 function formatMoney(value) {
     return value.toLocaleString("pt-BR", {
         style: "currency",
@@ -57,6 +63,20 @@ function removeItem(id) {
     renderCart();
 }
 
+function clearCart() {
+    cart = [];
+    renderCart();
+}
+
+function updateCartSummary(total) {
+    const itemCount = cart.reduce((count, item) => count + item.quantity, 0);
+    const itemLabel = itemCount === 1 ? "item" : "itens";
+
+    cartSummaryCount.innerText = `${itemCount} ${itemLabel}`;
+    cartSummaryTotal.innerText = formatMoney(total);
+    clearCartButton.disabled = itemCount === 0;
+}
+
 function renderCart() {
     const container = document.getElementById("cart-items");
     const totalElement = document.getElementById("cart-total");
@@ -66,6 +86,7 @@ function renderCart() {
     if (cart.length === 0) {
         container.innerHTML = '<div class="empty-cart">Nenhum item no carrinho.</div>';
         totalElement.innerText = "R$ 0,00";
+        updateCartSummary(0);
         return;
     }
 
@@ -95,6 +116,7 @@ function renderCart() {
     });
 
     totalElement.innerText = formatMoney(total);
+    updateCartSummary(total);
 }
 
 function prepareCartData() {
@@ -102,10 +124,16 @@ function prepareCartData() {
 }
 
 function toggleMobileCart() {
+    const shouldExpand = !cartElement.classList.contains("is-expanded");
 
-    document
-        .getElementById("cart")
-        .classList
-        .toggle("open");
+    cartElement.classList.toggle("is-expanded", shouldExpand);
+    document.body.classList.toggle("mobile-cart-expanded", shouldExpand);
 
+    cartToggleButton.setAttribute("aria-expanded", String(shouldExpand));
+    cartToggleButton.innerText = shouldExpand ? "Recolher" : "Ver carrinho";
 }
+
+cartToggleButton.addEventListener("click", toggleMobileCart);
+clearCartButton.addEventListener("click", clearCart);
+
+renderCart();

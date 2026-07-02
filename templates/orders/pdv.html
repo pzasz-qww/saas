@@ -56,56 +56,77 @@
 
         </section>
 
-        <aside class="cart">
-
-            <h2>Carrinho</h2>
-
-            <form method="post" onsubmit="prepareCartData()">
-
-                {% csrf_token %}
-
-                <div class="field">
-
-                    <label for="table_or_tab">
-                        Mesa / Comanda
-                    </label>
-
-                    <input
-                        type="text"
-                        name="table_or_tab"
-                        id="table_or_tab"
-                        placeholder="Ex: Mesa 04">
-
+        <aside class="cart" id="cart">
+            <div class="cart-summary">
+                <div class="cart-summary-values">
+                    <span id="cart-summary-count">0 itens</span>
+                    <strong id="cart-summary-total">R$ 0,00</strong>
                 </div>
-
-                <div id="cart-items">
-
-                    <div class="empty-cart">
-                        Nenhum item no carrinho.
-                    </div>
-
-                </div>
-
-                <div class="total">
-                    <span>Total</span>
-                    <span id="cart-total">R$ 0,00</span>
-                </div>
-
-                <input
-                    type="hidden"
-                    name="cart_data"
-                    id="cart_data">
 
                 <button
-                    type="submit"
-                    class="submit-button">
-
-                    Enviar pedido
-
+                    type="button"
+                    class="cart-toggle-button"
+                    id="cart-toggle-button"
+                    aria-controls="cart-content"
+                    aria-expanded="false">
+                    Ver carrinho
                 </button>
+            </div>
 
-            </form>
+            <div class="cart-content" id="cart-content">
+                <h2>Carrinho</h2>
 
+                <form method="post" id="cart-form" onsubmit="prepareCartData()">
+                    {% csrf_token %}
+
+                    <div class="field">
+                        <label for="table_or_tab">
+                            Mesa / Comanda
+                        </label>
+
+                        <input
+                            type="text"
+                            name="table_or_tab"
+                            id="table_or_tab"
+                            placeholder="Ex: Mesa 04">
+                    </div>
+
+                    <div class="cart-items-scroll">
+                        <div id="cart-items">
+                            <div class="empty-cart">
+                                Nenhum item no carrinho.
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="cart-footer">
+                        <div class="total">
+                            <span>Total</span>
+                            <span id="cart-total">R$ 0,00</span>
+                        </div>
+
+                        <input
+                            type="hidden"
+                            name="cart_data"
+                            id="cart_data">
+
+                        <div class="cart-footer-actions">
+                            <button
+                                type="button"
+                                class="clear-cart-button"
+                                id="clear-cart-button">
+                                Limpar
+                            </button>
+
+                            <button
+                                type="submit"
+                                class="submit-button">
+                                Enviar pré-venda
+                            </button>
+                        </div>
+                    </div>
+                </form>
+            </div>
         </aside>
 
     </div>
