@@ -1,186 +1,14 @@
-<!DOCTYPE html>
-<html lang="pt-br">
-<head>
-    <meta charset="UTF-8">
-    <title>Pessoal</title>
+{% extends "base.html" %}
+{% load static %}
 
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            background: #f4f4f5;
-            margin: 0;
-            padding: 24px;
-            color: #111827;
-        }
+{% block title %}Pessoal{% endblock %}
 
-        .container {
-            max-width: 1150px;
-            margin: 0 auto;
-        }
+{% block extra_css %}
+    <link rel="stylesheet" href="{% static 'css/people_management.css' %}">
+{% endblock %}
 
-        h1 {
-            margin-bottom: 6px;
-        }
-
-        .subtitle {
-            color: #6b7280;
-            margin-bottom: 22px;
-        }
-
-        .grid {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 18px;
-            align-items: start;
-        }
-
-        .card {
-            background: white;
-            border-radius: 14px;
-            padding: 20px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.06);
-            margin-bottom: 18px;
-        }
-
-        label {
-            display: block;
-            font-weight: bold;
-            margin-bottom: 6px;
-        }
-
-        input,
-        select {
-            width: 100%;
-            box-sizing: border-box;
-            padding: 11px;
-            border: 1px solid #d1d5db;
-            border-radius: 10px;
-            font-size: 15px;
-            margin-bottom: 14px;
-        }
-
-        button {
-            border: none;
-            background: #2563eb;
-            color: white;
-            border-radius: 10px;
-            padding: 12px 14px;
-            font-size: 15px;
-            font-weight: bold;
-            cursor: pointer;
-        }
-
-        button:hover {
-            background: #1d4ed8;
-        }
-
-        .secondary-button {
-            background: #059669;
-        }
-
-        .secondary-button:hover {
-            background: #047857;
-        }
-
-        .permissions-grid {
-            display: grid;
-            grid-template-columns: repeat(2, minmax(220px, 1fr));
-            gap: 10px;
-            margin-bottom: 16px;
-        }
-
-        .switch-row {
-            background: #f9fafb;
-            border-radius: 10px;
-            padding: 10px;
-            display: flex;
-            justify-content: space-between;
-            gap: 12px;
-            align-items: center;
-        }
-
-        .switch-row span {
-            font-size: 14px;
-            font-weight: bold;
-        }
-
-        .switch-row input {
-            width: auto;
-            margin: 0;
-            transform: scale(1.2);
-        }
-
-        .messages {
-            margin-bottom: 18px;
-        }
-
-        .message {
-            background: white;
-            border-left: 5px solid #2563eb;
-            padding: 12px 16px;
-            border-radius: 8px;
-            margin-bottom: 8px;
-            font-weight: bold;
-        }
-
-        details {
-            background: white;
-            border-radius: 14px;
-            padding: 14px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.06);
-            margin-bottom: 12px;
-        }
-
-        summary {
-            cursor: pointer;
-            font-weight: bold;
-            font-size: 16px;
-        }
-
-        .employee-meta {
-            color: #6b7280;
-            font-size: 13px;
-            margin-top: 6px;
-            margin-bottom: 14px;
-        }
-
-        .inline-buttons {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 8px;
-        }
-
-        .help {
-            color: #6b7280;
-            font-size: 13px;
-            margin-top: -8px;
-            margin-bottom: 12px;
-        }
-
-        @media (max-width: 850px) {
-            body {
-                padding: 14px;
-            }
-
-            .grid {
-                grid-template-columns: 1fr;
-            }
-
-            .permissions-grid {
-                grid-template-columns: 1fr;
-            }
-
-            button {
-                width: 100%;
-            }
-        }
-    </style>
-</head>
-
-<body>
-    <div class="container">
-        {% include "includes/main_menu.html" %}
-
+{% block content %}
+    <div class="people-page">
         {% if messages %}
             <div class="messages">
                 {% for message in messages %}
@@ -194,8 +22,8 @@
             Cadastre funções, funcionários e ajuste permissões com chaves liga/desliga.
         </p>
 
-        <div class="grid">
-            <div class="card">
+        <div class="people-grid">
+            <div class="people-card">
                 <h2>Nova função</h2>
                 <p class="help">
                     Ex: Garçom, Caixa, Gerente, Estoque, Cozinha, Freela sábado.
@@ -221,7 +49,7 @@
                 </form>
             </div>
 
-            <div class="card">
+            <div class="people-card">
                 <h2>Novo funcionário</h2>
                 <p class="help">
                     Se deixar a senha vazia, o sistema usa 123.
@@ -258,7 +86,7 @@
             </div>
         </div>
 
-        <div class="card">
+        <div class="people-card">
             <h2>Funcionários cadastrados</h2>
             <p class="help">
                 Abra um funcionário para ajustar função e permissões individuais.
@@ -326,7 +154,7 @@
                     </div>
                 </form>
 
-                <form method="post" style="margin-top: 10px;">
+                <form method="post" class="apply-role-form">
                     {% csrf_token %}
                     <input type="hidden" name="action" value="apply_role_to_profile">
                     <input type="hidden" name="profile_id" value="{{ row.profile.id }}">
@@ -337,10 +165,9 @@
                 </form>
             </details>
         {% empty %}
-            <div class="card">
+            <div class="people-card">
                 Nenhum funcionário cadastrado ainda.
             </div>
         {% endfor %}
     </div>
-</body>
-</html>
+{% endblock %}

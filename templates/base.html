@@ -13,7 +13,9 @@
 
 <body>
     <div class="page-shell">
-        {% include "includes/main_menu.html" %}
+        {% block main_menu %}
+            {% include "includes/main_menu.html" %}
+        {% endblock %}
 
         <main class="page-content">
             {% block content %}{% endblock %}
