@@ -29,7 +29,7 @@ h1 {
     gap: 20px;
 }
 
-main {
+.products-panel {
     width: 100%;
     padding-bottom: 420px;
 }
