@@ -2,7 +2,7 @@
 __pycache__/
 *.py[cod]
 *$py.class
-
+staticfiles/
 # Django
 *.log
 local_settings.py
