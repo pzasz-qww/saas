@@ -23,3 +23,5 @@ env/
 # Sistema operacional
 .DS_Store
 Thumbs.db
+__pycache__/
+*.py[cod]
