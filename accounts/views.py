@@ -1,11 +1,10 @@
 from django.contrib import messages
 from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.models import User
-from django.db import IntegrityError
 from django.shortcuts import get_object_or_404, redirect, render
 
 from accounts.permissions import can_manage_users, get_user_company
-from .models import PERMISSION_FIELDS, Profile, StaffRole
+from .models import PERMISSION_FIELDS, Profile
 
 
 PERMISSION_LABELS = {
@@ -44,6 +43,15 @@ def build_permission_list(obj):
     return permissions
 
 
+def get_valid_role(role):
+    valid_roles = {choice[0] for choice in Profile.ROLE_CHOICES}
+
+    if role in valid_roles:
+        return role
+
+    return "waiter"
+
+
 def login_view(request):
     if request.user.is_authenticated:
         return redirect("orders:pdv")
@@ -77,66 +85,35 @@ def people_management(request):
         return redirect("accounts:login")
 
     if not can_manage_users(request.user):
-        messages.warning(request, "Você não tem permissão para gerenciar funcionários.")
+        messages.warning(request, "Você não tem permissão para gerenciar a equipe.")
         return redirect("orders:pdv")
 
     company = get_user_company(request.user)
 
     if company is None:
-        messages.warning(request, "Cadastre uma empresa antes de gerenciar funcionários.")
+        messages.warning(request, "Cadastre uma empresa antes de gerenciar a equipe.")
         return redirect("/admin/companies/company/")
 
     if request.method == "POST":
         action = request.POST.get("action")
 
-        if action == "create_role":
-            role_name = request.POST.get("role_name", "").strip()
-
-            if not role_name:
-                messages.warning(request, "Informe o nome da função.")
-                return redirect("accounts:people_management")
-
-            try:
-                role = StaffRole.objects.create(
-                    company=company,
-                    name=role_name,
-                )
-
-                for field in PERMISSION_FIELDS:
-                    setattr(role, field, checkbox_value(request, field))
-
-                role.save()
-
-                messages.success(request, f"Função criada: {role.name}.")
-
-            except IntegrityError:
-                messages.warning(request, "Já existe uma função com esse nome.")
-
-            return redirect("accounts:people_management")
-
         if action == "create_employee":
             username = request.POST.get("username", "").strip()
             first_name = request.POST.get("first_name", "").strip()
-            password = request.POST.get("password", "").strip() or "123"
-            role_id = request.POST.get("role_template")
-            is_staff = request.POST.get("is_staff") == "on"
+            password = request.POST.get("password", "").strip()
+            role = get_valid_role(request.POST.get("role"))
 
             if not username:
-                messages.warning(request, "Informe o usuário do funcionário.")
+                messages.warning(request, "Informe o usuário de acesso.")
+                return redirect("accounts:people_management")
+
+            if not password:
+                messages.warning(request, "Informe uma senha inicial para o membro da equipe.")
                 return redirect("accounts:people_management")
 
             if User.objects.filter(username=username).exists():
                 messages.warning(request, "Já existe um usuário com esse nome.")
                 return redirect("accounts:people_management")
-
-            role_template = None
-
-            if role_id:
-                role_template = get_object_or_404(
-                    StaffRole,
-                    id=role_id,
-                    company=company,
-                )
 
             user = User.objects.create_user(
                 username=username,
@@ -144,23 +121,15 @@ def people_management(request):
                 first_name=first_name,
             )
 
-            user.is_staff = is_staff
-            user.save(update_fields=["is_staff"])
-
-            profile = Profile.objects.create(
+            profile = Profile(
                 user=user,
                 company=company,
-                role_template=role_template,
+                role=role,
             )
-
-            profile.apply_role_defaults()
+            profile.apply_legacy_role_defaults()
             profile.save()
 
-            messages.success(
-                request,
-                f"Funcionário criado: {username}. Senha: {password}",
-            )
-
+            messages.success(request, f"Membro da equipe criado: {username}.")
             return redirect("accounts:people_management")
 
         if action == "update_profile":
@@ -172,33 +141,32 @@ def people_management(request):
                 company=company,
             )
 
-            role_id = request.POST.get("role_template")
+            first_name = request.POST.get("first_name", "").strip()
+            role = get_valid_role(request.POST.get("role"))
             is_active = request.POST.get("is_active") == "on"
-            is_staff = request.POST.get("is_staff") == "on"
+            role_changed = profile.role != role
 
-            if role_id:
-                profile.role_template = get_object_or_404(
-                    StaffRole,
-                    id=role_id,
-                    company=company,
-                )
-            else:
-                profile.role_template = None
+            profile.role = role
 
-            for field in PERMISSION_FIELDS:
-                setattr(profile, field, checkbox_value(request, field))
+            if role_changed:
+                profile.apply_legacy_role_defaults()
 
+            profile.user.first_name = first_name
+            profile.user.is_active = is_active
+            profile.user.save(update_fields=["first_name", "is_active"])
             profile.save()
 
-            profile.user.is_active = is_active
-            profile.user.is_staff = is_staff
-            profile.user.save(update_fields=["is_active", "is_staff"])
-
-            messages.success(request, f"Permissões atualizadas para {profile.user.username}.")
+            if role_changed:
+                messages.success(
+                    request,
+                    "Função atualizada e permissões padrão aplicadas.",
+                )
+            else:
+                messages.success(request, f"Membro atualizado: {profile.user.username}.")
 
             return redirect("accounts:people_management")
 
-        if action == "apply_role_to_profile":
+        if action == "update_permissions":
             profile_id = request.POST.get("profile_id")
 
             profile = get_object_or_404(
@@ -207,22 +175,23 @@ def people_management(request):
                 company=company,
             )
 
-            profile.apply_role_defaults()
+            for field in PERMISSION_FIELDS:
+                setattr(profile, field, checkbox_value(request, field))
+
             profile.save()
 
             messages.success(
                 request,
-                f"Permissões padrão aplicadas para {profile.user.username}.",
+                f"Permissões avançadas atualizadas para {profile.user.username}.",
             )
 
             return redirect("accounts:people_management")
 
-    roles = StaffRole.objects.filter(company=company).order_by("name")
     profiles = (
         Profile.objects
         .filter(company=company)
         .select_related("user", "company", "role_template")
-        .order_by("user__username")
+        .order_by("user__first_name", "user__username")
     )
 
     profile_rows = []
@@ -231,7 +200,7 @@ def people_management(request):
         profile_rows.append(
             {
                 "profile": profile,
-                "role_template_id": profile.role_template_id,
+                "display_name": profile.user.first_name or profile.user.username,
                 "permissions": build_permission_list(profile),
             }
         )
@@ -241,14 +210,7 @@ def people_management(request):
         "accounts/people_management.html",
         {
             "company": company,
-            "roles": roles,
             "profile_rows": profile_rows,
-            "permission_fields": [
-                {
-                    "field": field,
-                    "label": PERMISSION_LABELS.get(field, field),
-                }
-                for field in PERMISSION_FIELDS
-            ],
+            "role_choices": Profile.ROLE_CHOICES,
         },
     )

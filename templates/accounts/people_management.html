@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% load static %}
 
-{% block title %}Pessoal{% endblock %}
+{% block title %}Equipe{% endblock %}
 
 {% block extra_css %}
     <link rel="stylesheet" href="{% static 'css/people_management.css' %}">
@@ -17,157 +17,150 @@
             </div>
         {% endif %}
 
-        <h1>Pessoal</h1>
-        <p class="subtitle">
-            Cadastre funções, funcionários e ajuste permissões com chaves liga/desliga.
-        </p>
+        <header class="people-header">
+            <h1>Equipe</h1>
+            <p class="subtitle">Gerencie quem acessa o sistema do bar.</p>
+        </header>
 
-        <div class="people-grid">
-            <div class="people-card">
-                <h2>Nova função</h2>
-                <p class="help">
-                    Ex: Garçom, Caixa, Gerente, Estoque, Cozinha, Freela sábado.
-                </p>
+        <section class="people-card">
+            <h2>Novo membro da equipe</h2>
 
-                <form method="post">
-                    {% csrf_token %}
-                    <input type="hidden" name="action" value="create_role">
+            <form method="post" class="team-form">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="create_employee">
 
-                    <label for="role_name">Nome da função</label>
-                    <input type="text" name="role_name" id="role_name" required placeholder="Ex: Garçom">
-
-                    <div class="permissions-grid">
-                        {% for permission in permission_fields %}
-                            <label class="switch-row">
-                                <span>{{ permission.label }}</span>
-                                <input type="checkbox" name="{{ permission.field }}">
-                            </label>
-                        {% endfor %}
+                <div class="form-grid">
+                    <div>
+                        <label for="first_name">Nome visível</label>
+                        <input type="text" name="first_name" id="first_name" required placeholder="Ex: João">
                     </div>
 
-                    <button type="submit">Criar função</button>
-                </form>
-            </div>
+                    <div>
+                        <label for="username">Usuário de acesso</label>
+                        <input type="text" name="username" id="username" required placeholder="Ex: caixa01">
+                    </div>
 
-            <div class="people-card">
-                <h2>Novo funcionário</h2>
-                <p class="help">
-                    Se deixar a senha vazia, o sistema usa 123.
-                </p>
+                    <div>
+                        <label for="password">Senha inicial</label>
+                        <input type="password" name="password" id="password" required autocomplete="new-password">
+                    </div>
 
-                <form method="post">
-                    {% csrf_token %}
-                    <input type="hidden" name="action" value="create_employee">
-
-                    <label for="username">Usuário</label>
-                    <input type="text" name="username" id="username" required placeholder="Ex: garcom01">
-
-                    <label for="first_name">Nome visível</label>
-                    <input type="text" name="first_name" id="first_name" placeholder="Ex: João">
-
-                    <label for="password">Senha</label>
-                    <input type="text" name="password" id="password" placeholder="Ex: 123">
-
-                    <label for="role_template">Função</label>
-                    <select name="role_template" id="role_template">
-                        <option value="">Sem função personalizada</option>
-                        {% for role in roles %}
-                            <option value="{{ role.id }}">{{ role.name }}</option>
-                        {% endfor %}
-                    </select>
-
-                    <label class="switch-row">
-                        <span>Pode acessar Admin Django</span>
-                        <input type="checkbox" name="is_staff">
-                    </label>
-
-                    <button type="submit" class="secondary-button">Criar funcionário</button>
-                </form>
-            </div>
-        </div>
-
-        <div class="people-card">
-            <h2>Funcionários cadastrados</h2>
-            <p class="help">
-                Abra um funcionário para ajustar função e permissões individuais.
-            </p>
-        </div>
-
-        {% for row in profile_rows %}
-            <details>
-                <summary>
-                    {{ row.profile.user.username }}
-                    {% if row.profile.user.first_name %}
-                        - {{ row.profile.user.first_name }}
-                    {% endif %}
-                </summary>
-
-                <div class="employee-meta">
-                    Função atual:
-                    {% if row.profile.role_template %}
-                        {{ row.profile.role_template.name }}
-                    {% else %}
-                        {{ row.profile.get_role_display }}
-                    {% endif %}
-                    <br>
-                    Ativo: {{ row.profile.user.is_active }}
-                    |
-                    Staff/Admin: {{ row.profile.user.is_staff }}
+                    <div>
+                        <label for="role">Função operacional</label>
+                        <select name="role" id="role" required>
+                            {% for value, label in role_choices %}
+                                <option value="{{ value }}">{{ label }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
                 </div>
 
-                <form method="post">
-                    {% csrf_token %}
-                    <input type="hidden" name="action" value="update_profile">
-                    <input type="hidden" name="profile_id" value="{{ row.profile.id }}">
+                <button type="submit">Criar membro</button>
+            </form>
+        </section>
 
-                    <label>Função</label>
-                    <select name="role_template">
-                        <option value="">Sem função personalizada</option>
-                        {% for role in roles %}
-                            <option value="{{ role.id }}" {% if role.id == row.role_template_id %}selected{% endif %}>
-                                {{ role.name }}
-                            </option>
-                        {% endfor %}
-                    </select>
-
-                    <div class="permissions-grid">
-                        <label class="switch-row">
-                            <span>Usuário ativo</span>
-                            <input type="checkbox" name="is_active" {% if row.profile.user.is_active %}checked{% endif %}>
-                        </label>
-
-                        <label class="switch-row">
-                            <span>Acessa Admin Django</span>
-                            <input type="checkbox" name="is_staff" {% if row.profile.user.is_staff %}checked{% endif %}>
-                        </label>
-
-                        {% for permission in row.permissions %}
-                            <label class="switch-row">
-                                <span>{{ permission.label }}</span>
-                                <input type="checkbox" name="{{ permission.field }}" {% if permission.value %}checked{% endif %}>
-                            </label>
-                        {% endfor %}
-                    </div>
-
-                    <div class="inline-buttons">
-                        <button type="submit">Salvar permissões</button>
-                    </div>
-                </form>
-
-                <form method="post" class="apply-role-form">
-                    {% csrf_token %}
-                    <input type="hidden" name="action" value="apply_role_to_profile">
-                    <input type="hidden" name="profile_id" value="{{ row.profile.id }}">
-
-                    <button type="submit" class="secondary-button">
-                        Aplicar permissões padrão da função
-                    </button>
-                </form>
-            </details>
-        {% empty %}
-            <div class="people-card">
-                Nenhum funcionário cadastrado ainda.
+        <section class="team-section">
+            <div class="section-title-row">
+                <div>
+                    <h2>Membros da equipe</h2>
+                    <p class="help">Veja quem está ativo e ajuste função, nome e acesso.</p>
+                </div>
             </div>
-        {% endfor %}
+
+            <div class="member-list">
+                {% for row in profile_rows %}
+                    <article class="member-card {% if not row.profile.user.is_active %}is-inactive{% endif %}">
+                        <div class="member-overview">
+                            <div>
+                                <h3>{{ row.display_name }}</h3>
+                                <div class="member-username">{{ row.profile.user.username }}</div>
+                            </div>
+
+                            <div class="member-tags">
+                                <span class="role-badge">{{ row.profile.get_role_display }}</span>
+                                {% if row.profile.user.is_active %}
+                                    <span class="status-badge active">Ativo</span>
+                                {% else %}
+                                    <span class="status-badge inactive">Inativo</span>
+                                {% endif %}
+                            </div>
+                        </div>
+
+                        <details class="member-edit">
+                            <summary>Editar membro</summary>
+
+                            <form method="post" class="team-form edit-form">
+                                {% csrf_token %}
+                                <input type="hidden" name="action" value="update_profile">
+                                <input type="hidden" name="profile_id" value="{{ row.profile.id }}">
+
+                                <div class="form-grid">
+                                    <div>
+                                        <label for="first_name_{{ row.profile.id }}">Nome visível</label>
+                                        <input
+                                            type="text"
+                                            name="first_name"
+                                            id="first_name_{{ row.profile.id }}"
+                                            value="{{ row.profile.user.first_name }}"
+                                        >
+                                    </div>
+
+                                    <div>
+                                        <label>Usuário de acesso</label>
+                                        <input type="text" value="{{ row.profile.user.username }}" disabled>
+                                    </div>
+
+                                    <div>
+                                        <label for="role_{{ row.profile.id }}">Função operacional</label>
+                                        <select name="role" id="role_{{ row.profile.id }}" required>
+                                            {% for value, label in role_choices %}
+                                                <option value="{{ value }}" {% if row.profile.role == value %}selected{% endif %}>
+                                                    {{ label }}
+                                                </option>
+                                            {% endfor %}
+                                        </select>
+                                    </div>
+
+                                    <label class="switch-row status-switch">
+                                        <span>Usuário ativo</span>
+                                        <input type="checkbox" name="is_active" {% if row.profile.user.is_active %}checked{% endif %}>
+                                    </label>
+                                </div>
+
+                                <p class="help">Ao trocar a função, as permissões padrão dessa função serão aplicadas automaticamente.</p>
+
+                                <button type="submit">Salvar membro</button>
+                            </form>
+
+                            <details class="advanced-permissions">
+                                <summary>Avançado</summary>
+                                <p class="help">Ajuste permissões individuais somente quando o padrão da função não for suficiente.</p>
+
+                                <form method="post">
+                                    {% csrf_token %}
+                                    <input type="hidden" name="action" value="update_permissions">
+                                    <input type="hidden" name="profile_id" value="{{ row.profile.id }}">
+
+                                    <div class="permissions-grid">
+                                        {% for permission in row.permissions %}
+                                            <label class="switch-row">
+                                                <span>{{ permission.label }}</span>
+                                                <input type="checkbox" name="{{ permission.field }}" {% if permission.value %}checked{% endif %}>
+                                            </label>
+                                        {% endfor %}
+                                    </div>
+
+                                    <button type="submit" class="secondary-button">Salvar permissões avançadas</button>
+                                </form>
+                            </details>
+                        </details>
+                    </article>
+                {% empty %}
+                    <div class="people-card empty-state">
+                        Nenhum membro cadastrado ainda.
+                    </div>
+                {% endfor %}
+            </div>
+        </section>
     </div>
 {% endblock %}
