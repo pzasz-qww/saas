@@ -4,6 +4,7 @@ from decimal import Decimal
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
+from django.db import transaction
 from django.db.models import Q
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
@@ -20,7 +21,36 @@ from accounts.permissions import (
     get_user_company,
 )
 from products.models import Product
+from sales.models import Sale
 from .models import Order, OrderItem
+
+
+SALEABLE_PRODUCT_TYPES = ("sale", "both")
+INVALID_CART_MESSAGE = (
+    "Não foi possível criar o pedido. Confira os itens do carrinho e tente novamente."
+)
+
+
+def parse_positive_integer(value):
+    if isinstance(value, bool) or value is None:
+        return None
+
+    if isinstance(value, int):
+        parsed_value = value
+    elif isinstance(value, str):
+        value = value.strip()
+
+        if not value.isdecimal():
+            return None
+
+        parsed_value = int(value)
+    else:
+        return None
+
+    if parsed_value <= 0:
+        return None
+
+    return parsed_value
 
 
 @login_required
@@ -46,36 +76,68 @@ def pdv_view(request):
         try:
             cart_items = json.loads(cart_data)
         except json.JSONDecodeError:
-            cart_items = []
+            messages.warning(request, INVALID_CART_MESSAGE)
+            return redirect("orders:pdv")
+
+        if not isinstance(cart_items, list):
+            messages.warning(request, INVALID_CART_MESSAGE)
+            return redirect("orders:pdv")
 
         if not cart_items:
             messages.warning(request, "Adicione pelo menos um item ao pedido.")
             return redirect("orders:pdv")
 
-        order = Order.objects.create(
-            company=company,
-            table_or_tab=table_or_tab,
-            status="pre_sale",
-            created_by=request.user,
-        )
+        validated_items = []
 
         for item in cart_items:
-            product_id = item.get("id")
-            quantity = Decimal(str(item.get("quantity", 1)))
+            if not isinstance(item, dict):
+                messages.warning(request, INVALID_CART_MESSAGE)
+                return redirect("orders:pdv")
 
-            product = get_object_or_404(
-                Product,
-                id=product_id,
-                company=company,
-                active=True,
+            product_id = parse_positive_integer(item.get("id"))
+            quantity = parse_positive_integer(item.get("quantity"))
+
+            if product_id is None or quantity is None:
+                messages.warning(request, INVALID_CART_MESSAGE)
+                return redirect("orders:pdv")
+
+            product = (
+                Product.objects
+                .filter(
+                    id=product_id,
+                    company=company,
+                    active=True,
+                    product_type__in=SALEABLE_PRODUCT_TYPES,
+                )
+                .first()
             )
 
-            OrderItem.objects.create(
-                order=order,
-                company=company,
-                product=product,
-                quantity=quantity,
+            if product is None:
+                messages.warning(request, INVALID_CART_MESSAGE)
+                return redirect("orders:pdv")
+
+            validated_items.append(
+                {
+                    "product": product,
+                    "quantity": Decimal(quantity),
+                }
             )
+
+        with transaction.atomic():
+            order = Order.objects.create(
+                company=company,
+                table_or_tab=table_or_tab,
+                status="pre_sale",
+                created_by=request.user,
+            )
+
+            for item in validated_items:
+                OrderItem.objects.create(
+                    order=order,
+                    company=company,
+                    product=item["product"],
+                    quantity=item["quantity"],
+                )
 
         messages.success(request, f"Pedido #{order.id} enviado como pré-venda.")
 
@@ -86,7 +148,11 @@ def pdv_view(request):
 
     products = (
         Product.objects
-        .filter(company=company, active=True)
+        .filter(
+            company=company,
+            active=True,
+            product_type__in=SALEABLE_PRODUCT_TYPES,
+        )
         .select_related("unit")
         .order_by("category", "name")
     )
@@ -209,6 +275,13 @@ def approve_order(request, order_id, payment_method):
 
     company = get_user_company(request.user)
     order = get_object_or_404(Order, id=order_id, company=company)
+
+    valid_payment_methods = {value for value, _label in Sale.PAYMENT_METHODS}
+
+    if payment_method not in valid_payment_methods:
+        messages.warning(request, "Forma de pagamento inválida.")
+        return redirect("orders:order_detail", order_id=order.id)
+
     sale = order.approve(payment_method=payment_method, user=request.user)
 
     if sale:
