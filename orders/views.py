@@ -167,11 +167,14 @@ def orders_panel(request):
 
 @login_required
 def order_detail(request, order_id):
+    company = get_user_company(request.user)
+
     order = get_object_or_404(
         Order.objects
         .select_related("company", "created_by", "approved_by", "sale")
         .prefetch_related("items__product"),
         id=order_id,
+        company=company,
     )
 
     can_view_this_order = (
@@ -204,7 +207,8 @@ def approve_order(request, order_id, payment_method):
         messages.warning(request, "Você não tem permissão para aprovar vendas.")
         return redirect("orders:order_detail", order_id=order_id)
 
-    order = get_object_or_404(Order, id=order_id)
+    company = get_user_company(request.user)
+    order = get_object_or_404(Order, id=order_id, company=company)
     sale = order.approve(payment_method=payment_method, user=request.user)
 
     if sale:
@@ -222,7 +226,8 @@ def mark_order_delivered(request, order_id):
         messages.warning(request, "Você não tem permissão para marcar pedidos como entregues.")
         return redirect("orders:order_detail", order_id=order_id)
 
-    order = get_object_or_404(Order, id=order_id)
+    company = get_user_company(request.user)
+    order = get_object_or_404(Order, id=order_id, company=company)
     order.mark_delivered()
 
     messages.success(request, f"Pedido #{order.id} marcado como entregue.")
@@ -237,7 +242,8 @@ def cancel_order(request, order_id):
         messages.warning(request, "Você não tem permissão para cancelar pré-vendas.")
         return redirect("orders:order_detail", order_id=order_id)
 
-    order = get_object_or_404(Order, id=order_id)
+    company = get_user_company(request.user)
+    order = get_object_or_404(Order, id=order_id, company=company)
     order.cancel()
 
     messages.warning(request, f"Pedido #{order.id} cancelado.")
@@ -255,7 +261,8 @@ def cancel_paid_order_with_stock_return(request, order_id):
         )
         return redirect("orders:order_detail", order_id=order_id)
 
-    order = get_object_or_404(Order, id=order_id)
+    company = get_user_company(request.user)
+    order = get_object_or_404(Order, id=order_id, company=company)
     order.cancel_paid_and_return_stock(user=request.user)
 
     messages.warning(
@@ -276,7 +283,8 @@ def discard_paid_order(request, order_id):
         )
         return redirect("orders:order_detail", order_id=order_id)
 
-    order = get_object_or_404(Order, id=order_id)
+    company = get_user_company(request.user)
+    order = get_object_or_404(Order, id=order_id, company=company)
     order.discard_paid_order(user=request.user)
 
     messages.warning(
