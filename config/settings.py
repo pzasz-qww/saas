@@ -113,10 +113,13 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
 
 STATIC_URL = 'static/'
+
 # Diretório de arquivos estáticos em desenvolvimento
 STATICFILES_DIRS = [
     BASE_DIR / 'static',
 ]
+
+STATIC_ROOT = BASE_DIR / "staticfiles"
 
 # Configurações de fuso horário e idioma para o Brasil (opcional, mas recomendado para o bar)
 LANGUAGE_CODE = 'pt-br'
