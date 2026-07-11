@@ -1,4 +1,5 @@
 from django.contrib import admin
+from django.core.exceptions import ObjectDoesNotExist
 
 from .models import Sale, SaleItem
 
@@ -31,7 +32,9 @@ class SaleAdmin(admin.ModelAdmin):
     list_display = (
         "id",
         "company",
+        "show_order",
         "payment_method",
+        "status",
         "total_amount",
         "total_cost",
         "gross_profit",
@@ -42,25 +45,46 @@ class SaleAdmin(admin.ModelAdmin):
     list_filter = (
         "company",
         "payment_method",
+        "status",
         "created_at",
     )
 
-    search_fields = ("id",)
+    search_fields = (
+        "=id",
+        "company__name",
+        "=order__id",
+        "created_by__username",
+        "created_by__first_name",
+        "created_by__last_name",
+    )
 
     readonly_fields = (
+        "show_order",
         "total_amount",
         "total_cost",
         "gross_profit",
+        "created_by",
         "created_at",
     )
 
+    ordering = ("-created_at",)
+
     fieldsets = (
         (
-            "Venda",
+            "Dados principais",
             {
                 "fields": (
                     "company",
+                    "show_order",
+                )
+            },
+        ),
+        (
+            "Pagamento",
+            {
+                "fields": (
                     "payment_method",
+                    "status",
                 )
             },
         ),
@@ -71,6 +95,15 @@ class SaleAdmin(admin.ModelAdmin):
                     "total_amount",
                     "total_cost",
                     "gross_profit",
+                ),
+                "classes": ("collapse",),
+            },
+        ),
+        (
+            "Auditoria",
+            {
+                "fields": (
+                    "created_by",
                     "created_at",
                 ),
                 "classes": ("collapse",),
@@ -84,11 +117,25 @@ class SaleAdmin(admin.ModelAdmin):
 
         super().save_model(request, obj, form, change)
 
+    def show_order(self, obj):
+        if not obj:
+            return "-"
+
+        try:
+            order = obj.order
+        except ObjectDoesNotExist:
+            return "-"
+
+        return f"Pedido #{order.id}"
+
+    show_order.short_description = "Pedido"
+
 
 @admin.register(SaleItem)
 class SaleItemAdmin(admin.ModelAdmin):
     list_display = (
         "sale",
+        "company",
         "product",
         "quantity",
         "unit_price",
@@ -106,7 +153,8 @@ class SaleItemAdmin(admin.ModelAdmin):
 
     search_fields = (
         "product__name",
-        "sale__id",
+        "company__name",
+        "=sale__id",
     )
 
     readonly_fields = (
@@ -115,4 +163,38 @@ class SaleItemAdmin(admin.ModelAdmin):
         "total_price",
         "total_cost",
         "created_at",
+    )
+
+    ordering = ("-created_at",)
+
+    fieldsets = (
+        (
+            "Item da venda",
+            {
+                "fields": (
+                    "sale",
+                    "company",
+                    "product",
+                    "quantity",
+                )
+            },
+        ),
+        (
+            "Valores",
+            {
+                "fields": (
+                    "unit_price",
+                    "unit_cost",
+                    "total_price",
+                    "total_cost",
+                )
+            },
+        ),
+        (
+            "Auditoria",
+            {
+                "fields": ("created_at",),
+                "classes": ("collapse",),
+            },
+        ),
     )

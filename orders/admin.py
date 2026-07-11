@@ -30,6 +30,7 @@ class OrderAdmin(admin.ModelAdmin):
         "company",
         "table_or_tab",
         "status",
+        "show_payment_method",
         "total_amount",
         "created_by",
         "approved_by",
@@ -39,17 +40,23 @@ class OrderAdmin(admin.ModelAdmin):
     list_filter = (
         "company",
         "status",
+        "sale__payment_method",
         "created_at",
     )
 
     search_fields = (
-        "id",
+        "=id",
+        "company__name",
         "table_or_tab",
         "created_by__username",
+        "created_by__first_name",
+        "created_by__last_name",
     )
 
     readonly_fields = (
         "total_amount",
+        "show_payment_method",
+        "created_by",
         "approved_by",
         "approved_at",
         "delivered_at",
@@ -57,22 +64,25 @@ class OrderAdmin(admin.ModelAdmin):
         "created_at",
     )
 
+    ordering = ("-created_at",)
+
     fieldsets = (
         (
-            "Pedido",
+            "Dados principais",
             {
                 "fields": (
                     "company",
                     "table_or_tab",
-                    "status",
                     "notes",
                 )
             },
         ),
         (
-            "Resultado",
+            "Pagamento e status",
             {
                 "fields": (
+                    "status",
+                    "show_payment_method",
                     "total_amount",
                     "sale",
                 )
@@ -107,6 +117,14 @@ class OrderAdmin(admin.ModelAdmin):
             obj.created_by = request.user
 
         super().save_model(request, obj, form, change)
+
+    def show_payment_method(self, obj):
+        if not obj or not obj.sale_id:
+            return "-"
+
+        return obj.sale.get_payment_method_display()
+
+    show_payment_method.short_description = "Pagamento"
 
     def approve_pix(self, request, queryset):
         for order in queryset:
@@ -161,6 +179,7 @@ class OrderAdmin(admin.ModelAdmin):
 class OrderItemAdmin(admin.ModelAdmin):
     list_display = (
         "order",
+        "company",
         "product",
         "quantity",
         "unit_price",
@@ -176,11 +195,45 @@ class OrderItemAdmin(admin.ModelAdmin):
 
     search_fields = (
         "product__name",
-        "order__id",
+        "company__name",
+        "=order__id",
     )
 
     readonly_fields = (
         "unit_price",
         "total_price",
         "created_at",
+    )
+
+    ordering = ("-created_at",)
+
+    fieldsets = (
+        (
+            "Item do pedido",
+            {
+                "fields": (
+                    "order",
+                    "company",
+                    "product",
+                    "quantity",
+                    "notes",
+                )
+            },
+        ),
+        (
+            "Valores",
+            {
+                "fields": (
+                    "unit_price",
+                    "total_price",
+                )
+            },
+        ),
+        (
+            "Auditoria",
+            {
+                "fields": ("created_at",),
+                "classes": ("collapse",),
+            },
+        ),
     )
