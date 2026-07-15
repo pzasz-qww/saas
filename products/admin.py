@@ -6,8 +6,22 @@ from .models import Unit, Product, StockEntry, StockMovement
 @admin.register(Unit)
 class UnitAdmin(admin.ModelAdmin):
     list_display = ("name", "symbol", "company")
-    search_fields = ("name", "symbol")
+    search_fields = ("name", "symbol", "company__name")
     list_filter = ("company",)
+    ordering = ("company__name", "name")
+
+    fieldsets = (
+        (
+            "Unidade",
+            {
+                "fields": (
+                    "company",
+                    "name",
+                    "symbol",
+                )
+            },
+        ),
+    )
 
 
 class StockEntryInline(admin.TabularInline):
@@ -35,46 +49,95 @@ class ProductAdmin(admin.ModelAdmin):
         "name",
         "company",
         "category",
+        "product_type",
         "unit",
         "sale_price",
         "show_current_stock",
+        "minimum_quantity",
         "show_average_cost",
         "show_profit_per_unit",
         "active",
     )
 
-    search_fields = ("name", "category")
-    list_filter = ("company", "category", "product_type", "active")
+    search_fields = ("name", "company__name", "category", "unit__name", "unit__symbol")
+    list_filter = ("company", "category", "product_type", "active", "unit")
+    readonly_fields = (
+        "show_current_stock",
+        "show_average_cost",
+        "show_profit_per_unit",
+        "created_at",
+    )
+    ordering = ("company__name", "category", "name")
 
     fieldsets = (
         (
-            "Produto",
+            "Dados básicos",
             {
                 "fields": (
                     "company",
                     "name",
                     "category",
                     "product_type",
+                )
+            },
+        ),
+        (
+            "Preço e unidade",
+            {
+                "fields": (
                     "unit",
                     "sale_price",
+                )
+            },
+        ),
+        (
+            "Controle de estoque",
+            {
+                "fields": (
                     "minimum_quantity",
+                    "show_current_stock",
+                    "show_average_cost",
+                    "show_profit_per_unit",
+                )
+            },
+        ),
+        (
+            "Status",
+            {
+                "fields": (
                     "active",
                 )
+            },
+        ),
+        (
+            "Auditoria",
+            {
+                "fields": ("created_at",),
+                "classes": ("collapse",),
             },
         ),
     )
 
     def show_current_stock(self, obj):
+        if not obj:
+            return "-"
+
         return obj.current_stock
 
     show_current_stock.short_description = "Estoque atual"
 
     def show_average_cost(self, obj):
+        if not obj:
+            return "-"
+
         return f"R$ {obj.average_cost:.2f}"
 
     show_average_cost.short_description = "Custo médio"
 
     def show_profit_per_unit(self, obj):
+        if not obj:
+            return "-"
+
         return f"R$ {obj.profit_per_unit:.2f}"
 
     show_profit_per_unit.short_description = "Lucro/un."
@@ -84,33 +147,45 @@ class ProductAdmin(admin.ModelAdmin):
 class StockEntryAdmin(admin.ModelAdmin):
     list_display = (
         "product",
+        "company",
         "total_cost",
         "quantity_added",
         "remaining_quantity",
         "show_unit_cost",
+        "created_by",
         "show_expected_profit",
         "created_at",
     )
 
-    search_fields = ("product__name", "notes")
-    list_filter = ("company", "product", "entry_mode", "created_at")
+    search_fields = ("product__name", "company__name", "notes", "created_by__username")
+    list_filter = ("company", "product", "entry_mode", "created_by", "created_at")
 
     readonly_fields = (
         "remaining_quantity",
         "show_unit_cost",
         "show_potential_revenue",
         "show_expected_profit",
+        "created_by",
         "created_at",
     )
 
+    ordering = ("-created_at",)
+
     fieldsets = (
         (
-            "Entrada simples",
+            "Entrada",
             {
                 "fields": (
                     "company",
                     "product",
                     "entry_mode",
+                )
+            },
+        ),
+        (
+            "Quantidade e custo",
+            {
+                "fields": (
                     "total_cost",
                     "quantity_added",
                     "remaining_quantity",
@@ -135,8 +210,17 @@ class StockEntryAdmin(admin.ModelAdmin):
                     "show_unit_cost",
                     "show_potential_revenue",
                     "show_expected_profit",
+                ),
+            },
+        ),
+        (
+            "Auditoria",
+            {
+                "fields": (
+                    "created_by",
                     "created_at",
                 ),
+                "classes": ("collapse",),
             },
         ),
     )
@@ -148,16 +232,25 @@ class StockEntryAdmin(admin.ModelAdmin):
         super().save_model(request, obj, form, change)
 
     def show_unit_cost(self, obj):
+        if not obj:
+            return "-"
+
         return f"R$ {obj.unit_cost:.2f}"
 
     show_unit_cost.short_description = "Custo unitário"
 
     def show_potential_revenue(self, obj):
+        if not obj:
+            return "-"
+
         return f"R$ {obj.potential_revenue:.2f}"
 
     show_potential_revenue.short_description = "Receita potencial"
 
     def show_expected_profit(self, obj):
+        if not obj:
+            return "-"
+
         return f"R$ {obj.expected_profit:.2f}"
 
     show_expected_profit.short_description = "Lucro esperado"
@@ -167,6 +260,7 @@ class StockEntryAdmin(admin.ModelAdmin):
 class StockMovementAdmin(admin.ModelAdmin):
     list_display = (
         "product",
+        "company",
         "movement_type",
         "quantity",
         "sale_value",
@@ -176,8 +270,8 @@ class StockMovementAdmin(admin.ModelAdmin):
         "created_at",
     )
 
-    search_fields = ("product__name", "reason", "notes")
-    list_filter = ("company", "product", "movement_type", "created_at")
+    search_fields = ("product__name", "company__name", "reason", "notes", "created_by__username")
+    list_filter = ("company", "product", "movement_type", "created_by", "created_at")
 
     readonly_fields = (
         "stock_entry",
@@ -186,6 +280,8 @@ class StockMovementAdmin(admin.ModelAdmin):
         "created_by",
         "created_at",
     )
+
+    ordering = ("-created_at",)
 
     fieldsets = (
         (

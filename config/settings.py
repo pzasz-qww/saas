@@ -10,10 +10,7 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/6.0/ref/settings/
 """
 
-import os
 from pathlib import Path
-
-import dj_database_url
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -23,21 +20,15 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = os.environ.get(
-    "SECRET_KEY",
-    "django-insecure-msi_xeo!x$&_+8)xb=@vxvc^sa(8^1-u$1&jydyt@rw08julw2",
-)
+SECRET_KEY = 'django-insecure-msi_xeo!x$&_+8)xb=@vxvc^sa(8^1-u$1&jydyt@rw08julw2'
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = "RENDER" not in os.environ
+DEBUG = True
 
-ALLOWED_HOSTS = ["localhost", "127.0.0.1"]
-
-if render_hostname := os.environ.get("RENDER_EXTERNAL_HOSTNAME"):
-    ALLOWED_HOSTS.append(render_hostname)
+ALLOWED_HOSTS = ["*"]
 
 
-# Application definition
+# Application definitiona
 
 INSTALLED_APPS = [
     'django.contrib.admin',
@@ -57,7 +48,6 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
-    'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -93,11 +83,10 @@ WSGI_APPLICATION = 'config.wsgi.application'
 # https://docs.djangoproject.com/en/6.0/ref/settings/#databases
 
 DATABASES = {
-    "default": dj_database_url.config(
-        default=f"sqlite:///{(BASE_DIR / 'db.sqlite3').as_posix()}",
-        conn_max_age=600,
-        conn_health_checks=True,
-    )
+    'default': {
+        'ENGINE': 'django.db.backends.sqlite3',
+        'NAME': BASE_DIR / 'db.sqlite3',
+    }
 }
 
 
@@ -123,21 +112,14 @@ USE_TZ = True
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
 
-STATIC_URL = '/static/'
-STATIC_ROOT = BASE_DIR / 'staticfiles'
+STATIC_URL = 'static/'
+
 # Diretório de arquivos estáticos em desenvolvimento
 STATICFILES_DIRS = [
     BASE_DIR / 'static',
 ]
 
-STORAGES = {
-    "default": {
-        "BACKEND": "django.core.files.storage.FileSystemStorage",
-    },
-    "staticfiles": {
-        "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
-    },
-}
+STATIC_ROOT = BASE_DIR / "staticfiles"
 
 # Configurações de fuso horário e idioma para o Brasil (opcional, mas recomendado para o bar)
 LANGUAGE_CODE = 'pt-br'
