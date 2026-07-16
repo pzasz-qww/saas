@@ -4,7 +4,15 @@ from xml.sax.saxutils import escape
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
-from django.db.models import DecimalField, Sum, Value
+from django.db.models import (
+    Case,
+    DecimalField,
+    ExpressionWrapper,
+    F,
+    Sum,
+    Value,
+    When,
+)
 from django.db.models.functions import Coalesce
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
@@ -48,11 +56,55 @@ def stock_dashboard(request):
         return redirect("orders:pdv")
 
     company = get_user_company(request.user)
+    current_stock_field = DecimalField(max_digits=12, decimal_places=2)
+    average_cost_field = DecimalField(max_digits=14, decimal_places=4)
+    stock_cost_expression = ExpressionWrapper(
+        F("stock_entries__remaining_quantity")
+        * F("stock_entries__total_cost")
+        / F("stock_entries__quantity_added"),
+        output_field=average_cost_field,
+    )
 
     products = (
         Product.objects
         .filter(company=company, active=True)
         .select_related("company", "unit")
+        .annotate(
+            annotated_current_stock=Coalesce(
+                Sum("stock_entries__remaining_quantity"),
+                Value(Decimal("0.00")),
+                output_field=current_stock_field,
+            ),
+            annotated_average_cost_quantity=Coalesce(
+                Sum(
+                    Case(
+                        When(
+                            stock_entries__remaining_quantity__gt=0,
+                            then=F("stock_entries__remaining_quantity"),
+                        ),
+                        default=Value(Decimal("0.00")),
+                        output_field=current_stock_field,
+                    )
+                ),
+                Value(Decimal("0.00")),
+                output_field=current_stock_field,
+            ),
+            annotated_average_cost_total=Coalesce(
+                Sum(
+                    Case(
+                        When(
+                            stock_entries__remaining_quantity__gt=0,
+                            stock_entries__quantity_added__gt=0,
+                            then=stock_cost_expression,
+                        ),
+                        default=Value(Decimal("0.00")),
+                        output_field=average_cost_field,
+                    )
+                ),
+                Value(Decimal("0.00")),
+                output_field=average_cost_field,
+            ),
+        )
         .order_by("category", "name")
     )
 

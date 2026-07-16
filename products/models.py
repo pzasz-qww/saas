@@ -68,8 +68,23 @@ class Product(models.Model):
 
     @property
     def current_stock(self):
+        annotated_stock = self._get_annotated_decimal(
+            "annotated_current_stock",
+            "report_current_stock",
+        )
+
+        if annotated_stock is not None:
+            return annotated_stock
+
         result = self.stock_entries.aggregate(total=Sum("remaining_quantity"))
         return result["total"] or Decimal("0.00")
+
+    def _get_annotated_decimal(self, *attribute_names):
+        for attribute_name in attribute_names:
+            if hasattr(self, attribute_name):
+                return getattr(self, attribute_name) or Decimal("0.00")
+
+        return None
 
     @classmethod
     def get_stock_status(cls, current_stock, recommended_quantity):
@@ -103,6 +118,19 @@ class Product(models.Model):
 
     @property
     def average_cost(self):
+        annotated_cost_total = self._get_annotated_decimal(
+            "annotated_average_cost_total"
+        )
+        annotated_cost_quantity = self._get_annotated_decimal(
+            "annotated_average_cost_quantity"
+        )
+
+        if annotated_cost_total is not None and annotated_cost_quantity is not None:
+            if annotated_cost_quantity == 0:
+                return Decimal("0.00")
+
+            return annotated_cost_total / annotated_cost_quantity
+
         entries = self.stock_entries.filter(remaining_quantity__gt=0)
 
         total_cost = Decimal("0.00")
