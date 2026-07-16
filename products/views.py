@@ -49,13 +49,7 @@ def parse_decimal(value):
         return None
 
 
-@login_required
-def stock_dashboard(request):
-    if not can_view_stock(request.user):
-        messages.warning(request, "Você não tem permissão para ver o estoque.")
-        return redirect("orders:pdv")
-
-    company = get_user_company(request.user)
+def _get_stock_products_queryset(company):
     current_stock_field = DecimalField(max_digits=12, decimal_places=2)
     average_cost_field = DecimalField(max_digits=14, decimal_places=4)
     stock_cost_expression = ExpressionWrapper(
@@ -65,7 +59,7 @@ def stock_dashboard(request):
         output_field=average_cost_field,
     )
 
-    products = (
+    return (
         Product.objects
         .filter(company=company, active=True)
         .select_related("company", "unit")
@@ -108,6 +102,16 @@ def stock_dashboard(request):
         .order_by("category", "name")
     )
 
+
+@login_required
+def stock_dashboard(request):
+    if not can_view_stock(request.user):
+        messages.warning(request, "Você não tem permissão para ver o estoque.")
+        return redirect("orders:pdv")
+
+    company = get_user_company(request.user)
+    products = _get_stock_products_queryset(company)
+
     return render(
         request,
         "products/stock_dashboard.html",
@@ -115,6 +119,97 @@ def stock_dashboard(request):
             "products": products,
             "can_create_stock_entry": can_create_stock_entry(request.user),
             "can_adjust_stock": can_adjust_stock(request.user),
+        },
+    )
+
+
+@login_required
+@require_GET
+def shopping_list(request):
+    if not can_view_stock(request.user):
+        messages.warning(request, "Você não tem permissão para ver o estoque.")
+        return redirect("orders:pdv")
+
+    company = get_user_company(request.user)
+
+    if company is None:
+        messages.warning(request, "Nenhuma empresa está vinculada ao seu usuário.")
+        return redirect("orders:pdv")
+
+    status_filters = [
+        {"key": "buy", "label": "Comprar"},
+        {"key": "empty", "label": "Esgotado"},
+        {"key": "critical", "label": Product.STOCK_STATUS_LABELS["critical"]},
+        {"key": "low", "label": Product.STOCK_STATUS_LABELS["low"]},
+        {"key": "ok", "label": Product.STOCK_STATUS_LABELS["ok"]},
+    ]
+    valid_statuses = {status_filter["key"] for status_filter in status_filters}
+    selected_status = request.GET.get("status", "buy")
+
+    if selected_status not in valid_statuses:
+        selected_status = "buy"
+
+    buying_statuses = {"empty", "critical", "low"}
+    counts = {status_filter["key"]: 0 for status_filter in status_filters}
+    rows = []
+
+    for product in _get_stock_products_queryset(company):
+        current_stock = product.current_stock
+        recommended_stock = product.minimum_quantity or Decimal("0.00")
+        status = product.stock_status
+        suggested_quantity = recommended_stock - current_stock
+
+        if suggested_quantity < 0:
+            suggested_quantity = Decimal("0.00")
+
+        row = {
+            "product": product,
+            "category": product.category or "Sem categoria",
+            "current_stock": current_stock,
+            "recommended_stock": recommended_stock,
+            "recommended_defined": recommended_stock > 0,
+            "status": status,
+            "status_label": product.stock_status_label,
+            "suggested_quantity": suggested_quantity,
+            "unit": product.unit,
+        }
+
+        counts[status] += 1
+
+        if status in buying_statuses:
+            counts["buy"] += 1
+
+        if selected_status == "buy" and status in buying_statuses:
+            rows.append(row)
+        elif selected_status == status:
+            rows.append(row)
+
+    filter_options = []
+
+    for status_filter in status_filters:
+        filter_options.append({
+            "key": status_filter["key"],
+            "label": status_filter["label"],
+            "count": counts[status_filter["key"]],
+            "active": status_filter["key"] == selected_status,
+        })
+
+    selected_filter_label = next(
+        status_filter["label"]
+        for status_filter in status_filters
+        if status_filter["key"] == selected_status
+    )
+
+    return render(
+        request,
+        "products/shopping_list.html",
+        {
+            "company": company,
+            "emitted_at": timezone.localtime(),
+            "filter_options": filter_options,
+            "rows": rows,
+            "selected_filter_label": selected_filter_label,
+            "selected_status": selected_status,
         },
     )
 

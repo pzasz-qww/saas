@@ -1,0 +1,165 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Lista de Compras{% endblock %}
+
+{% block extra_css %}
+    <link rel="stylesheet" href="{% static 'css/shopping_list.css' %}">
+{% endblock %}
+
+{% block content %}
+    <div class="shopping-list-page">
+        <header class="shopping-header">
+            <div>
+                <h1>Lista de Compras</h1>
+                <p class="shopping-subtitle">
+                    Produtos para reposição do estoque.
+                </p>
+            </div>
+
+            <div class="shopping-meta">
+                <div><strong>Empresa:</strong> {{ company.name }}</div>
+                <div><strong>Emitido em:</strong> {{ emitted_at|date:"d/m/Y H:i" }}</div>
+                <div><strong>Filtro:</strong> {{ selected_filter_label }}</div>
+            </div>
+        </header>
+
+        <div class="shopping-actions">
+            <a href="{% url 'products:stock_dashboard' %}" class="shopping-action-link secondary">
+                Voltar ao estoque
+            </a>
+
+            <button type="button" class="shopping-action-link" onclick="window.print()">
+                Imprimir lista
+            </button>
+        </div>
+
+        <nav class="shopping-tabs" aria-label="Filtros da lista de compras">
+            {% for filter_option in filter_options %}
+                <a
+                    href="{% url 'products:shopping_list' %}?status={{ filter_option.key }}"
+                    class="shopping-tab{% if filter_option.active %} active{% endif %}"
+                    {% if filter_option.active %}aria-current="page"{% endif %}
+                >
+                    <span>{{ filter_option.label }}</span>
+                    <strong>{{ filter_option.count }}</strong>
+                </a>
+            {% endfor %}
+        </nav>
+
+        <section class="shopping-table-card" aria-label="Produtos da lista de compras">
+            <table class="shopping-table">
+                <thead>
+                    <tr>
+                        <th>Produto</th>
+                        <th>Categoria</th>
+                        <th>Status</th>
+                        <th>Atual</th>
+                        <th>Recomendado</th>
+                        <th>Comprar</th>
+                        <th>Unidade</th>
+                        <th>Observação</th>
+                        <th>Comprado</th>
+                    </tr>
+                </thead>
+
+                <tbody>
+                    {% for row in rows %}
+                        <tr>
+                            <td>
+                                <div class="shopping-product-name">
+                                    {{ row.product.name }}
+                                </div>
+                            </td>
+
+                            <td>{{ row.category }}</td>
+
+                            <td>
+                                <span class="shopping-status shopping-status--{{ row.status }}">
+                                    {{ row.status_label }}
+                                </span>
+                            </td>
+
+                            <td>
+                                {{ row.current_stock|floatformat:2 }}
+                            </td>
+
+                            <td>
+                                {{ row.recommended_stock|floatformat:2 }}
+                                {% if not row.recommended_defined %}
+                                    <small>Não definido</small>
+                                {% endif %}
+                            </td>
+
+                            <td class="shopping-buy-quantity">
+                                {{ row.suggested_quantity|floatformat:2 }}
+                            </td>
+
+                            <td>{{ row.unit }}</td>
+
+                            <td>
+                                <span class="shopping-note-line"></span>
+                            </td>
+
+                            <td>
+                                <span class="shopping-check-box" aria-hidden="true"></span>
+                            </td>
+                        </tr>
+                    {% empty %}
+                        <tr>
+                            <td colspan="9" class="shopping-empty">
+                                Nenhum produto encontrado para este filtro.
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+
+            <div class="shopping-mobile-list">
+                {% for row in rows %}
+                    <article class="shopping-mobile-card shopping-mobile-card--{{ row.status }}">
+                        <div class="shopping-mobile-header">
+                            <div>
+                                <h2>{{ row.product.name }}</h2>
+                                <span>{{ row.category }}</span>
+                            </div>
+
+                            <span class="shopping-status shopping-status--{{ row.status }}">
+                                {{ row.status_label }}
+                            </span>
+                        </div>
+
+                        <div class="shopping-mobile-grid">
+                            <div>
+                                <span>Atual</span>
+                                <strong>{{ row.current_stock|floatformat:2 }} {{ row.unit }}</strong>
+                            </div>
+
+                            <div>
+                                <span>Recomendado</span>
+                                <strong>{{ row.recommended_stock|floatformat:2 }} {{ row.unit }}</strong>
+                                {% if not row.recommended_defined %}
+                                    <small>Não definido</small>
+                                {% endif %}
+                            </div>
+
+                            <div class="shopping-mobile-buy">
+                                <span>Comprar</span>
+                                <strong>{{ row.suggested_quantity|floatformat:2 }} {{ row.unit }}</strong>
+                            </div>
+                        </div>
+
+                        <div class="shopping-mobile-paper-fields">
+                            <span>Observação</span>
+                            <span>Comprado</span>
+                        </div>
+                    </article>
+                {% empty %}
+                    <div class="shopping-empty-card">
+                        Nenhum produto encontrado para este filtro.
+                    </div>
+                {% endfor %}
+            </div>
+        </section>
+    </div>
+{% endblock %}
