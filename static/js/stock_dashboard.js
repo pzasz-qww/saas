@@ -92,8 +92,6 @@ function applyFilters() {
 
         if (currentStatus === "all") {
             matchesStatus = true;
-        } else if (currentStatus === "critical") {
-            matchesStatus = status === "low" || status === "empty";
         } else {
             matchesStatus = status === currentStatus;
         }

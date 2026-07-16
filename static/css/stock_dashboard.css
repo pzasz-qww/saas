@@ -120,7 +120,7 @@
 .stock-table {
     width: 100%;
     border-collapse: collapse;
-    min-width: 920px;
+    min-width: 1040px;
 }
 
 .stock-table th {
@@ -158,6 +158,34 @@
 
 .money {
     font-weight: bold;
+}
+
+.stock-status {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 26px;
+    border-radius: 999px;
+    padding: 5px 9px;
+    font-size: 12px;
+    font-weight: bold;
+    white-space: nowrap;
+}
+
+.stock-status--ok {
+    background: #dcfce7;
+    color: #166534;
+}
+
+.stock-status--empty,
+.stock-status--critical {
+    background: #fee2e2;
+    color: #991b1b;
+}
+
+.stock-status--low {
+    background: #fef3c7;
+    color: #92400e;
 }
 
 .ok {
@@ -257,12 +285,19 @@
         box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
     }
 
+    .stock-mobile-card--ok {
+        border-color: #bbf7d0;
+        border-left-color: #16a34a;
+        background: #ffffff;
+    }
+
     .stock-mobile-card--low {
         border-color: #f59e0b;
         border-left-color: #d97706;
         background: #fffbeb;
     }
 
+    .stock-mobile-card--critical,
     .stock-mobile-card--empty {
         border-color: #fca5a5;
         border-left-color: #dc2626;
@@ -324,7 +359,8 @@
         color: #92400e;
     }
 
-    .stock-mobile-status--empty {
+    .stock-mobile-status--empty,
+    .stock-mobile-status--critical {
         background: #fee2e2;
         color: #991b1b;
     }
@@ -357,6 +393,7 @@
         color: #92400e;
     }
 
+    .stock-mobile-card--critical .stock-mobile-quantity-block strong,
     .stock-mobile-card--empty .stock-mobile-quantity-block strong {
         color: #991b1b;
     }

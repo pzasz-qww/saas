@@ -28,6 +28,12 @@ class Product(models.Model):
         ("internal_use", "Uso interno"),
         ("both", "Venda e uso interno"),
     ]
+    STOCK_STATUS_LABELS = {
+        "empty": "Esgotado",
+        "critical": "Crítico",
+        "low": "Baixo",
+        "ok": "OK",
+    }
 
     company = models.ForeignKey(Company, on_delete=models.CASCADE)
 
@@ -64,6 +70,36 @@ class Product(models.Model):
     def current_stock(self):
         result = self.stock_entries.aggregate(total=Sum("remaining_quantity"))
         return result["total"] or Decimal("0.00")
+
+    @classmethod
+    def get_stock_status(cls, current_stock, recommended_quantity):
+        current_stock = current_stock or Decimal("0.00")
+        recommended_quantity = recommended_quantity or Decimal("0.00")
+        half_recommended = recommended_quantity / Decimal("2")
+
+        if current_stock <= 0:
+            return "empty"
+
+        if current_stock <= half_recommended:
+            return "critical"
+
+        if current_stock <= recommended_quantity:
+            return "low"
+
+        return "ok"
+
+    @classmethod
+    def get_stock_status_label(cls, current_stock, recommended_quantity):
+        status = cls.get_stock_status(current_stock, recommended_quantity)
+        return cls.STOCK_STATUS_LABELS[status]
+
+    @property
+    def stock_status(self):
+        return self.get_stock_status(self.current_stock, self.minimum_quantity)
+
+    @property
+    def stock_status_label(self):
+        return self.get_stock_status_label(self.current_stock, self.minimum_quantity)
 
     @property
     def average_cost(self):

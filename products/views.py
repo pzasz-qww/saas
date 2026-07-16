@@ -151,22 +151,19 @@ def stock_report_pdf(request):
         "Categoria",
         "Unidade",
         "Estoque atual",
-        "Estoque mínimo",
+        "Estoque recomendado",
         "Status",
         "Preço de venda",
     ]]
 
     for product in products:
         current_stock = product.report_current_stock
+        status = Product.get_stock_status_label(
+            current_stock,
+            product.minimum_quantity,
+        )
 
-        if current_stock <= 0:
-            status = "Esgotado"
-        elif current_stock <= product.minimum_quantity:
-            status = "Baixo"
-        else:
-            status = "Disponível"
-
-        minimum_stock = (
+        recommended_stock = (
             f"{product.minimum_quantity:.2f}".replace(".", ",")
             if product.minimum_quantity > 0
             else "-"
@@ -177,14 +174,14 @@ def stock_report_pdf(request):
             Paragraph(escape(product.category or "Sem categoria"), cell_style),
             escape(product.unit.symbol),
             f"{current_stock:.2f}".replace(".", ","),
-            minimum_stock,
+            recommended_stock,
             status,
             f"R$ {product.sale_price:.2f}".replace(".", ","),
         ])
 
     table = Table(
         table_data,
-        colWidths=[58 * mm, 38 * mm, 24 * mm, 30 * mm, 30 * mm, 29 * mm, 34 * mm],
+        colWidths=[55 * mm, 36 * mm, 22 * mm, 30 * mm, 38 * mm, 28 * mm, 34 * mm],
         repeatRows=1,
         hAlign="LEFT",
     )
