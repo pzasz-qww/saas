@@ -6,7 +6,8 @@ from .models import Sale, SaleItem
 
 class SaleItemInline(admin.TabularInline):
     model = SaleItem
-    extra = 1
+    extra = 0
+    can_delete = False
 
     fields = (
         "product",
@@ -17,12 +18,13 @@ class SaleItemInline(admin.TabularInline):
         "total_cost",
     )
 
-    readonly_fields = (
-        "unit_price",
-        "unit_cost",
-        "total_price",
-        "total_cost",
-    )
+    readonly_fields = fields
+
+    def has_add_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
 
 
 @admin.register(Sale)
@@ -59,7 +61,10 @@ class SaleAdmin(admin.ModelAdmin):
     )
 
     readonly_fields = (
+        "company",
         "show_order",
+        "payment_method",
+        "status",
         "total_amount",
         "total_cost",
         "gross_profit",
@@ -117,6 +122,15 @@ class SaleAdmin(admin.ModelAdmin):
 
         super().save_model(request, obj, form, change)
 
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
     def show_order(self, obj):
         if not obj:
             return "-"
@@ -158,6 +172,10 @@ class SaleItemAdmin(admin.ModelAdmin):
     )
 
     readonly_fields = (
+        "sale",
+        "company",
+        "product",
+        "quantity",
         "unit_price",
         "unit_cost",
         "total_price",
@@ -166,6 +184,15 @@ class SaleItemAdmin(admin.ModelAdmin):
     )
 
     ordering = ("-created_at",)
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
 
     fieldsets = (
         (

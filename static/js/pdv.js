@@ -5,6 +5,46 @@ const cartToggleButton = document.getElementById("cart-toggle-button");
 const cartSummaryCount = document.getElementById("cart-summary-count");
 const cartSummaryTotal = document.getElementById("cart-summary-total");
 const clearCartButton = document.getElementById("clear-cart-button");
+const cartForm = document.getElementById("cart-form");
+const cartDataInput = document.getElementById("cart_data");
+const productButtons = document.querySelectorAll(".product-button");
+const initialCartElement = document.getElementById("pdv-initial-cart");
+
+function loadInitialCart() {
+    if (!initialCartElement) {
+        return [];
+    }
+
+    try {
+        const parsedCart = JSON.parse(initialCartElement.textContent);
+
+        if (!Array.isArray(parsedCart)) {
+            return [];
+        }
+
+        return parsedCart.flatMap(item => {
+            const id = String(item.id || "");
+            const name = typeof item.name === "string" ? item.name : "";
+            const price = Number(item.price);
+            const quantity = Number(item.quantity);
+
+            if (
+                !id
+                || !name
+                || !Number.isFinite(price)
+                || price < 0
+                || !Number.isInteger(quantity)
+                || quantity <= 0
+            ) {
+                return [];
+            }
+
+            return [{ id, name, price, quantity }];
+        });
+    } catch (error) {
+        return [];
+    }
+}
 
 function formatMoney(value) {
     return value.toLocaleString("pt-BR", {
@@ -72,20 +112,33 @@ function updateCartSummary(total) {
     const itemCount = cart.reduce((count, item) => count + item.quantity, 0);
     const itemLabel = itemCount === 1 ? "item" : "itens";
 
-    cartSummaryCount.innerText = `${itemCount} ${itemLabel}`;
-    cartSummaryTotal.innerText = formatMoney(total);
+    cartSummaryCount.textContent = `${itemCount} ${itemLabel}`;
+    cartSummaryTotal.textContent = formatMoney(total);
     clearCartButton.disabled = itemCount === 0;
+}
+
+function createCartActionButton(text, className, clickHandler) {
+    const button = document.createElement("button");
+    button.className = className;
+    button.type = "button";
+    button.textContent = text;
+    button.addEventListener("click", clickHandler);
+    return button;
 }
 
 function renderCart() {
     const container = document.getElementById("cart-items");
     const totalElement = document.getElementById("cart-total");
 
-    container.innerHTML = "";
+    container.replaceChildren();
 
     if (cart.length === 0) {
-        container.innerHTML = '<div class="empty-cart">Nenhum item no carrinho.</div>';
-        totalElement.innerText = "R$ 0,00";
+        const emptyCart = document.createElement("div");
+        emptyCart.className = "empty-cart";
+        emptyCart.textContent = "Nenhum item no carrinho.";
+        container.appendChild(emptyCart);
+
+        totalElement.textContent = "R$ 0,00";
         updateCartSummary(0);
         return;
     }
@@ -99,28 +152,37 @@ function renderCart() {
         const div = document.createElement("div");
         div.className = "cart-item";
 
-        div.innerHTML = `
-            <div>
-                <div class="cart-item-name">${item.quantity}x ${item.name}</div>
-                <div class="cart-item-meta">${formatMoney(item.price)} cada · ${formatMoney(itemTotal)}</div>
-            </div>
+        const itemDetails = document.createElement("div");
 
-            <div class="cart-actions">
-                <button class="small-button" type="button" onclick="decreaseItem('${item.id}')">-</button>
-                <button class="small-button" type="button" onclick="increaseItem('${item.id}')">+</button>
-                <button class="small-button remove-button" type="button" onclick="removeItem('${item.id}')">x</button>
-            </div>
-        `;
+        const itemName = document.createElement("div");
+        itemName.className = "cart-item-name";
+        itemName.textContent = `${item.quantity}x ${item.name}`;
+
+        const itemMeta = document.createElement("div");
+        itemMeta.className = "cart-item-meta";
+        itemMeta.textContent = `${formatMoney(item.price)} cada · ${formatMoney(itemTotal)}`;
+
+        itemDetails.append(itemName, itemMeta);
+
+        const actions = document.createElement("div");
+        actions.className = "cart-actions";
+        actions.append(
+            createCartActionButton("-", "small-button", () => decreaseItem(item.id)),
+            createCartActionButton("+", "small-button", () => increaseItem(item.id)),
+            createCartActionButton("x", "small-button remove-button", () => removeItem(item.id))
+        );
+
+        div.append(itemDetails, actions);
 
         container.appendChild(div);
     });
 
-    totalElement.innerText = formatMoney(total);
+    totalElement.textContent = formatMoney(total);
     updateCartSummary(total);
 }
 
 function prepareCartData() {
-    document.getElementById("cart_data").value = JSON.stringify(cart);
+    cartDataInput.value = JSON.stringify(cart);
 }
 
 function toggleMobileCart() {
@@ -130,10 +192,22 @@ function toggleMobileCart() {
     document.body.classList.toggle("mobile-cart-expanded", shouldExpand);
 
     cartToggleButton.setAttribute("aria-expanded", String(shouldExpand));
-    cartToggleButton.innerText = shouldExpand ? "Recolher" : "Ver carrinho";
+    cartToggleButton.textContent = shouldExpand ? "Recolher" : "Ver carrinho";
 }
+
+productButtons.forEach(button => {
+    button.addEventListener("click", () => {
+        addToCart(
+            button.dataset.productId,
+            button.dataset.productName,
+            button.dataset.productPrice
+        );
+    });
+});
 
 cartToggleButton.addEventListener("click", toggleMobileCart);
 clearCartButton.addEventListener("click", clearCart);
+cartForm.addEventListener("submit", prepareCartData);
 
+cart = loadInitialCart();
 renderCart();

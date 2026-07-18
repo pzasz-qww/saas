@@ -1,12 +1,13 @@
 from decimal import Decimal
 
 from django.conf import settings
-from django.db import models
-from django.utils import timezone
+from django.core.exceptions import ValidationError
+from django.db import models, router, transaction
+from django.db.models import Sum
 
 from companies.models import Company
-from products.models import Product, StockMovement
-from sales.models import Sale, SaleItem
+from products.models import Product
+from sales.models import Sale
 
 
 class Order(models.Model):
@@ -81,105 +82,61 @@ class Order(models.Model):
         self.save(update_fields=["total_amount"])
 
     def approve(self, payment_method, user=None):
-        if self.status in ["sold", "delivered"]:
-            return self.sale
+        from .services import approve_order
 
-        if self.status in ["cancelled", "discarded"]:
-            return None
-
-        sale = Sale.objects.create(
+        result = approve_order(
+            order_id=self.pk,
             company=self.company,
             payment_method=payment_method,
-            created_by=user,
+            user=user,
         )
-
-        for item in self.items.all():
-            SaleItem.objects.create(
-                sale=sale,
-                company=self.company,
-                product=item.product,
-                quantity=item.quantity,
-            )
-
-        self.status = "sold"
-        self.approved_by = user
-        self.approved_at = timezone.now()
-        self.sale = sale
-
-        self.save(
-            update_fields=[
-                "status",
-                "approved_by",
-                "approved_at",
-                "sale",
-            ]
-        )
-
-        return sale
+        self.refresh_from_db()
+        return result.sale
 
     def mark_delivered(self):
-        if self.status != "sold":
-            return
+        from .services import mark_order_delivered
 
-        self.status = "delivered"
-        self.delivered_at = timezone.now()
-
-        self.save(update_fields=["status", "delivered_at"])
+        mark_order_delivered(order_id=self.pk, company=self.company)
+        self.refresh_from_db()
 
     def cancel(self):
         """
         Cancela apenas pedidos em pré-venda.
         Não mexe no estoque porque ainda não virou venda.
         """
-        if self.status != "pre_sale":
-            return
+        from .services import cancel_pre_sale_order
 
-        self.status = "cancelled"
-        self.save(update_fields=["status"])
+        cancel_pre_sale_order(order_id=self.pk, company=self.company)
+        self.refresh_from_db()
 
     def cancel_paid_and_return_stock(self, user=None):
         """
         Cancela um pedido já vendido e devolve os itens ao estoque.
         Use quando o pedido foi pago, mas os produtos não foram entregues/consumidos.
         """
-        if self.status not in ["sold", "delivered"]:
-            return
+        from .services import cancel_paid_order_with_stock_return
 
-        if not self.sale:
-            return
-
-        for item in self.sale.items.all():
-            StockMovement.objects.create(
-                company=self.company,
-                product=item.product,
-                movement_type="return_to_stock",
-                quantity=item.quantity,
-                sale_value=0,
-                cost_value=item.total_cost,
-                reason=f"Cancelamento do Pedido #{self.id} com retorno ao estoque",
-                created_by=user,
-            )
-
-        self.sale.status = "cancelled"
-        self.sale.save(update_fields=["status"])
-
-        self.status = "cancelled"
-        self.save(update_fields=["status"])
+        result = cancel_paid_order_with_stock_return(
+            order_id=self.pk,
+            company=self.company,
+            user=user,
+        )
+        self.refresh_from_db()
+        return result.restored
 
     def discard_paid_order(self, user=None):
         """
         Descarta um pedido já vendido sem devolver estoque.
         Use quando houve erro no preparo, queda, perda ou descarte após pagamento.
         """
-        if self.status not in ["sold", "delivered"]:
-            return
+        from .services import discard_paid_order
 
-        if self.sale:
-            self.sale.status = "discarded"
-            self.sale.save(update_fields=["status"])
-
-        self.status = "discarded"
-        self.save(update_fields=["status"])
+        discard_paid_order(
+            order_id=self.pk,
+            company=self.company,
+            user=user,
+        )
+        self.refresh_from_db()
 
     def __str__(self):
         return f"Pedido #{self.id} - {self.get_status_display()} - R$ {self.total_amount}"
@@ -204,17 +161,125 @@ class OrderItem(models.Model):
         verbose_name_plural = "Itens do pedido"
 
     def save(self, *args, **kwargs):
-        if self.company_id is None and self.order_id is not None:
-            self.company = self.order.company
+        if self.order_id is None:
+            raise ValidationError("O item deve estar vinculado a um pedido.")
 
-        if self.unit_price == 0:
-            self.unit_price = self.product.sale_price
+        database = kwargs.get("using") or router.db_for_write(
+            type(self),
+            instance=self,
+        )
+        is_creation = self._state.adding
 
-        self.total_price = self.quantity * self.unit_price
+        with transaction.atomic(using=database):
+            if not is_creation:
+                persisted_order_id = (
+                    type(self).objects.using(database)
+                    .filter(pk=self.pk)
+                    .values_list("order_id", flat=True)
+                    .get()
+                )
+                if persisted_order_id != self.order_id:
+                    raise ValidationError(
+                        "Um item existente não pode ser transferido para outro pedido."
+                    )
 
-        super().save(*args, **kwargs)
+            locked_order = (
+                Order.objects.using(database)
+                .select_for_update()
+                .get(pk=self.order_id)
+            )
 
-        self.order.recalculate_total()
+            if locked_order.status != "pre_sale":
+                raise ValidationError(
+                    "Itens só podem ser alterados enquanto o pedido está em pré-venda."
+                )
+
+            if not is_creation:
+                persisted_item = (
+                    type(self).objects.using(database)
+                    .select_for_update()
+                    .only("order_id")
+                    .get(pk=self.pk)
+                )
+                if persisted_item.order_id != locked_order.pk:
+                    raise ValidationError(
+                        "O item foi alterado concorrentemente. Tente novamente."
+                    )
+
+            if self.company_id is None:
+                self.company_id = locked_order.company_id
+
+            if self.company_id != locked_order.company_id:
+                raise ValidationError(
+                    "O item deve pertencer à mesma empresa do pedido."
+                )
+
+            if self.product_id is None:
+                raise ValidationError("O item deve estar vinculado a um produto.")
+
+            product = (
+                Product.objects.using(database)
+                .only("company_id", "sale_price")
+                .get(pk=self.product_id)
+            )
+            if self.company_id != product.company_id:
+                raise ValidationError(
+                    "O produto deve pertencer à mesma empresa do pedido."
+                )
+
+            if is_creation and self.unit_price == 0:
+                self.unit_price = product.sale_price
+
+            self.total_price = self.quantity * self.unit_price
+            result = super().save(*args, **kwargs)
+            self._recalculate_locked_order_total(locked_order, database)
+            return result
+
+    def delete(self, using=None, keep_parents=False):
+        database = using or router.db_for_write(type(self), instance=self)
+
+        with transaction.atomic(using=database):
+            persisted_item = (
+                type(self).objects.using(database)
+                .filter(pk=self.pk)
+                .values("pk", "order_id")
+                .get()
+            )
+            locked_order = (
+                Order.objects.using(database)
+                .select_for_update()
+                .get(pk=persisted_item["order_id"])
+            )
+
+            if locked_order.status != "pre_sale":
+                raise ValidationError(
+                    "Itens só podem ser excluídos enquanto o pedido está em pré-venda."
+                )
+
+            locked_item = (
+                type(self).objects.using(database)
+                .select_for_update()
+                .get(pk=persisted_item["pk"])
+            )
+            result = super(OrderItem, locked_item).delete(
+                using=database,
+                keep_parents=keep_parents,
+            )
+            self.pk = None
+            self._recalculate_locked_order_total(locked_order, database)
+            return result
+
+    @staticmethod
+    def _recalculate_locked_order_total(locked_order, database):
+        total = (
+            OrderItem.objects.using(database)
+            .filter(order_id=locked_order.pk)
+            .aggregate(total=Sum("total_price"))["total"]
+            or Decimal("0.00")
+        )
+        Order.objects.using(database).filter(pk=locked_order.pk).update(
+            total_amount=total
+        )
 
     def __str__(self):
         return f"{self.quantity}x {self.product.name}"

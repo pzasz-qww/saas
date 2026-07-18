@@ -26,7 +26,8 @@ class UnitAdmin(admin.ModelAdmin):
 
 class StockEntryInline(admin.TabularInline):
     model = StockEntry
-    extra = 1
+    extra = 0
+    can_delete = False
 
     fields = (
         "entry_mode",
@@ -38,7 +39,13 @@ class StockEntryInline(admin.TabularInline):
         "notes",
     )
 
-    readonly_fields = ("remaining_quantity",)
+    readonly_fields = fields
+
+    def has_add_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
 
 
 @admin.register(Product)
@@ -142,6 +149,9 @@ class ProductAdmin(admin.ModelAdmin):
 
     show_profit_per_unit.short_description = "Lucro/un."
 
+    def has_delete_permission(self, request, obj=None):
+        return False
+
 
 @admin.register(StockEntry)
 class StockEntryAdmin(admin.ModelAdmin):
@@ -161,7 +171,15 @@ class StockEntryAdmin(admin.ModelAdmin):
     list_filter = ("company", "product", "entry_mode", "created_by", "created_at")
 
     readonly_fields = (
+        "company",
+        "product",
+        "entry_mode",
+        "total_cost",
+        "quantity_added",
         "remaining_quantity",
+        "package_quantity",
+        "package_cost",
+        "notes",
         "show_unit_cost",
         "show_potential_revenue",
         "show_expected_profit",
@@ -231,6 +249,15 @@ class StockEntryAdmin(admin.ModelAdmin):
 
         super().save_model(request, obj, form, change)
 
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
     def show_unit_cost(self, obj):
         if not obj:
             return "-"
@@ -274,9 +301,17 @@ class StockMovementAdmin(admin.ModelAdmin):
     list_filter = ("company", "product", "movement_type", "created_by", "created_at")
 
     readonly_fields = (
+        "company",
+        "product",
         "stock_entry",
+        "sale_item",
+        "reversal_of",
+        "movement_type",
+        "quantity",
         "sale_value",
         "cost_value",
+        "reason",
+        "notes",
         "created_by",
         "created_at",
     )
@@ -290,6 +325,8 @@ class StockMovementAdmin(admin.ModelAdmin):
                 "fields": (
                     "company",
                     "product",
+                    "sale_item",
+                    "reversal_of",
                     "movement_type",
                     "quantity",
                     "reason",
@@ -323,3 +360,12 @@ class StockMovementAdmin(admin.ModelAdmin):
             obj.created_by = request.user
 
         super().save_model(request, obj, form, change)
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False

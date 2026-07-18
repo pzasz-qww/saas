@@ -32,6 +32,11 @@ from accounts.permissions import (
 )
 
 from .models import Product, StockEntry, StockMovement, Unit
+from .services import (
+    StockServiceError,
+    apply_negative_adjustment,
+    apply_positive_adjustment,
+)
 
 
 def parse_decimal(value):
@@ -568,17 +573,19 @@ def stock_count_adjust(request):
             return redirect("products:stock_dashboard")
 
         if difference > 0:
-            StockMovement.objects.create(
-                company=company,
-                product=product,
-                movement_type="adjustment_positive",
-                quantity=difference,
-                sale_value=Decimal("0.00"),
-                cost_value=difference * product.average_cost,
-                reason="Ajuste positivo por conferência",
-                notes=notes,
-                created_by=request.user,
-            )
+            try:
+                apply_positive_adjustment(
+                    company=company,
+                    product=product,
+                    quantity=difference,
+                    cost_value=difference * product.average_cost,
+                    reason="Ajuste positivo por conferência",
+                    notes=notes,
+                    created_by=request.user,
+                )
+            except StockServiceError as error:
+                messages.warning(request, str(error))
+                return redirect("products:stock_count_adjust")
 
             messages.success(
                 request,
@@ -588,38 +595,19 @@ def stock_count_adjust(request):
             return redirect("products:stock_dashboard")
 
         quantity_to_remove = abs(difference)
-        remaining_to_remove = quantity_to_remove
 
-        entries = (
-            StockEntry.objects
-            .filter(
+        try:
+            apply_negative_adjustment(
                 company=company,
                 product=product,
-                remaining_quantity__gt=0,
-            )
-            .order_by("created_at")
-        )
-
-        for entry in entries:
-            if remaining_to_remove <= 0:
-                break
-
-            quantity_from_entry = min(entry.remaining_quantity, remaining_to_remove)
-
-            StockMovement.objects.create(
-                company=company,
-                product=product,
-                stock_entry=entry,
-                movement_type="adjustment_negative",
-                quantity=quantity_from_entry,
-                sale_value=Decimal("0.00"),
-                cost_value=quantity_from_entry * entry.unit_cost,
+                quantity=quantity_to_remove,
                 reason="Ajuste negativo por conferência",
                 notes=notes,
                 created_by=request.user,
             )
-
-            remaining_to_remove -= quantity_from_entry
+        except StockServiceError as error:
+            messages.warning(request, str(error))
+            return redirect("products:stock_count_adjust")
 
         messages.warning(
             request,

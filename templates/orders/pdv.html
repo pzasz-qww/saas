@@ -13,6 +13,16 @@
         Venda rápida por botões. Os pedidos entram como pré-venda.
     </p>
 
+    {% if messages %}
+        <div class="messages" role="alert" aria-live="polite">
+            {% for message in messages %}
+                <div class="message{% if message.tags %} {{ message.tags }}{% endif %}">
+                    {{ message|linebreaksbr }}
+                </div>
+            {% endfor %}
+        </div>
+    {% endif %}
+
     <div class="layout">
 
         <section class="products-panel">
@@ -30,7 +40,9 @@
                             <button
                                 type="button"
                                 class="product-button"
-                                onclick="addToCart('{{ product.id }}', '{{ product.name|escapejs }}', '{{ product.sale_price }}')">
+                                data-product-id="{{ product.id }}"
+                                data-product-name="{{ product.name }}"
+                                data-product-price="{{ product.sale_price }}">
 
                                 <div class="product-name">
                                     {{ product.name }}
@@ -76,7 +88,7 @@
             <div class="cart-content" id="cart-content">
                 <h2>Carrinho</h2>
 
-                <form method="post" id="cart-form" onsubmit="prepareCartData()">
+                <form method="post" id="cart-form">
                     {% csrf_token %}
 
                     <div class="field">
@@ -88,6 +100,7 @@
                             type="text"
                             name="table_or_tab"
                             id="table_or_tab"
+                            value="{{ initial_table_or_tab }}"
                             placeholder="Ex: Mesa 04">
                     </div>
 
@@ -130,6 +143,8 @@
         </aside>
 
     </div>
+
+    {{ initial_cart|json_script:"pdv-initial-cart" }}
 
 {% endblock %}
 

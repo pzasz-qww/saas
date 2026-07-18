@@ -2,7 +2,7 @@ from decimal import Decimal
 
 from django.conf import settings
 from django.db import models
-from django.db.models import Sum
+from django.db.models import Q, Sum
 
 from companies.models import Company
 
@@ -285,10 +285,26 @@ class StockMovement(models.Model):
 
     stock_entry = models.ForeignKey(
         StockEntry,
-        on_delete=models.SET_NULL,
+        on_delete=models.PROTECT,
         blank=True,
         null=True,
         related_name="movements",
+    )
+
+    sale_item = models.ForeignKey(
+        "sales.SaleItem",
+        on_delete=models.PROTECT,
+        blank=True,
+        null=True,
+        related_name="stock_movements",
+    )
+
+    reversal_of = models.OneToOneField(
+        "self",
+        on_delete=models.PROTECT,
+        blank=True,
+        null=True,
+        related_name="reversal",
     )
 
     movement_type = models.CharField(max_length=30, choices=MOVEMENT_TYPES)
@@ -324,74 +340,13 @@ class StockMovement(models.Model):
         verbose_name = "Movimento de estoque"
         verbose_name_plural = "Movimentos de estoque"
         ordering = ["-created_at"]
-
-    def find_available_entry(self):
-        return (
-            StockEntry.objects
-            .filter(
-                company=self.company,
-                product=self.product,
-                remaining_quantity__gt=0,
-            )
-            .order_by("created_at")
-            .first()
-        )
-
-    def save(self, *args, **kwargs):
-        is_new = self.pk is None
-
-        negative_types = [
-            "sale",
-            "loss",
-            "internal_use",
-            "courtesy",
-            "adjustment_negative",
+        constraints = [
+            models.UniqueConstraint(
+                fields=("sale_item", "stock_entry"),
+                condition=Q(movement_type="sale"),
+                name="uniq_sale_item_stock_entry",
+            ),
         ]
-
-        positive_types = [
-            "adjustment_positive",
-            "return_to_stock",
-        ]
-
-        if self.company_id is None and self.product_id is not None:
-            self.company = self.product.company
-
-        if self.stock_entry is None and self.movement_type in negative_types:
-            self.stock_entry = self.find_available_entry()
-
-        if self.stock_entry is None and self.movement_type in positive_types:
-            if self.cost_value is None:
-                self.cost_value = self.quantity * self.product.average_cost
-
-            self.stock_entry = StockEntry.objects.create(
-                company=self.company,
-                product=self.product,
-                entry_mode="simple",
-                total_cost=self.cost_value,
-                quantity_added=self.quantity,
-                remaining_quantity=Decimal("0.00"),
-                notes=f"Entrada automática por {self.get_movement_type_display()}",
-                created_by=self.created_by,
-            )
-
-        if self.cost_value is None:
-            if self.stock_entry:
-                self.cost_value = self.quantity * self.stock_entry.unit_cost
-            else:
-                self.cost_value = self.quantity * self.product.average_cost
-
-        if self.sale_value is None and self.movement_type == "sale":
-            self.sale_value = self.quantity * self.product.sale_price
-
-        super().save(*args, **kwargs)
-
-        if is_new and self.stock_entry and self.movement_type in negative_types:
-            self.stock_entry.remaining_quantity -= self.quantity
-            self.stock_entry.save(update_fields=["remaining_quantity"])
-
-        if is_new and self.stock_entry and self.movement_type in positive_types:
-            self.stock_entry.remaining_quantity += self.quantity
-            self.stock_entry.save(update_fields=["remaining_quantity"])
 
     def __str__(self):
         return f"{self.product.name} - {self.get_movement_type_display()} - {self.quantity}"

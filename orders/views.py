@@ -21,14 +21,53 @@ from accounts.permissions import (
     get_user_company,
 )
 from products.models import Product
+from products.services import (
+    InsufficientStock,
+    StockServiceError,
+    UntraceableSaleStock,
+    get_stock_shortages,
+)
 from sales.models import Sale
 from .models import Order, OrderItem
+from .services import (
+    OrderServiceError,
+    approve_order as approve_order_service,
+    cancel_paid_order_with_stock_return as cancel_paid_order_with_stock_return_service,
+)
 
 
 SALEABLE_PRODUCT_TYPES = ("sale", "both")
 INVALID_CART_MESSAGE = (
-    "Não foi possível criar o pedido. Confira os itens do carrinho e tente novamente."
+    "Não foi possível enviar a pré-venda. "
+    "Confira os itens do carrinho e tente novamente."
 )
+PDV_DRAFT_SESSION_KEY = "pdv_pre_sale_draft"
+
+
+def format_stock_quantity(value):
+    return format(value.normalize(), "f")
+
+
+def build_stock_shortage_message(shortages, products_by_id):
+    details = []
+
+    for shortage in shortages:
+        product = products_by_id[shortage.product_id]
+        if shortage.available <= 0:
+            detail = f"{product.name}: sem estoque."
+        else:
+            detail = (
+                f"{product.name}: solicitadas "
+                f"{format_stock_quantity(shortage.requested)} unidades, disponíveis "
+                f"{format_stock_quantity(shortage.available)}."
+            )
+        details.append(detail)
+
+    if len(details) == 1:
+        return f"Não foi possível enviar a pré-venda. {details[0]}"
+
+    formatted_details = "\n".join(f"- {detail}" for detail in details)
+    return f"Não foi possível enviar a pré-venda:\n{formatted_details}"
 
 
 def parse_positive_integer(value):
@@ -70,6 +109,7 @@ def pdv_view(request):
             messages.warning(request, "Você não tem permissão para criar pedidos.")
             return redirect("orders:pdv")
 
+        request.session.pop(PDV_DRAFT_SESSION_KEY, None)
         table_or_tab = request.POST.get("table_or_tab", "").strip()
         cart_data = request.POST.get("cart_data", "[]")
 
@@ -87,7 +127,8 @@ def pdv_view(request):
             messages.warning(request, "Adicione pelo menos um item ao pedido.")
             return redirect("orders:pdv")
 
-        validated_items = []
+        requested_quantities = defaultdict(lambda: Decimal("0.00"))
+        product_order = []
 
         for item in cart_items:
             if not isinstance(item, dict):
@@ -101,27 +142,58 @@ def pdv_view(request):
                 messages.warning(request, INVALID_CART_MESSAGE)
                 return redirect("orders:pdv")
 
-            product = (
-                Product.objects
-                .filter(
-                    id=product_id,
-                    company=company,
-                    active=True,
-                    product_type__in=SALEABLE_PRODUCT_TYPES,
-                )
-                .first()
-            )
+            if product_id not in requested_quantities:
+                product_order.append(product_id)
+            requested_quantities[product_id] += Decimal(quantity)
 
-            if product is None:
-                messages.warning(request, INVALID_CART_MESSAGE)
-                return redirect("orders:pdv")
+        products = Product.objects.filter(
+            id__in=requested_quantities,
+            company=company,
+            active=True,
+            product_type__in=SALEABLE_PRODUCT_TYPES,
+        )
+        products_by_id = {product.pk: product for product in products}
 
-            validated_items.append(
-                {
-                    "product": product,
-                    "quantity": Decimal(quantity),
-                }
+        if set(products_by_id) != set(requested_quantities):
+            messages.warning(request, INVALID_CART_MESSAGE)
+            return redirect("orders:pdv")
+
+        validated_items = [
+            {
+                "product": products_by_id[product_id],
+                "quantity": requested_quantities[product_id],
+            }
+            for product_id in product_order
+        ]
+
+        try:
+            shortages = get_stock_shortages(
+                company=company,
+                product_quantities=requested_quantities,
             )
+        except StockServiceError:
+            messages.warning(request, INVALID_CART_MESSAGE)
+            return redirect("orders:pdv")
+
+        if shortages:
+            request.session[PDV_DRAFT_SESSION_KEY] = {
+                "company_id": company.pk,
+                "table_or_tab": table_or_tab,
+                "cart": [
+                    {
+                        "id": str(item["product"].pk),
+                        "name": item["product"].name,
+                        "price": str(item["product"].sale_price),
+                        "quantity": int(item["quantity"]),
+                    }
+                    for item in validated_items
+                ],
+            }
+            messages.warning(
+                request,
+                build_stock_shortage_message(shortages, products_by_id),
+            )
+            return redirect("orders:pdv")
 
         with transaction.atomic():
             order = Order.objects.create(
@@ -163,12 +235,29 @@ def pdv_view(request):
         category_name = product.category or "Sem categoria"
         categories[category_name].append(product)
 
+    draft = request.session.pop(PDV_DRAFT_SESSION_KEY, {})
+    if (
+        not isinstance(draft, dict)
+        or draft.get("company_id") != company.pk
+    ):
+        draft = {}
+
+    initial_cart = draft.get("cart", [])
+    if not isinstance(initial_cart, list):
+        initial_cart = []
+
+    initial_table_or_tab = draft.get("table_or_tab", "")
+    if not isinstance(initial_table_or_tab, str):
+        initial_table_or_tab = ""
+
     return render(
         request,
         "orders/pdv.html",
         {
             "company": company,
             "categories": dict(categories),
+            "initial_cart": initial_cart,
+            "initial_table_or_tab": initial_table_or_tab,
         },
     )
 
@@ -282,12 +371,22 @@ def approve_order(request, order_id, payment_method):
         messages.warning(request, "Forma de pagamento inválida.")
         return redirect("orders:order_detail", order_id=order.id)
 
-    sale = order.approve(payment_method=payment_method, user=request.user)
-
-    if sale:
-        messages.success(request, f"Pedido #{order.id} aprovado com sucesso.")
+    try:
+        result = approve_order_service(
+            order_id=order.id,
+            company=company,
+            payment_method=payment_method,
+            user=request.user,
+        )
+    except InsufficientStock as error:
+        messages.warning(request, str(error))
+    except (OrderServiceError, StockServiceError) as error:
+        messages.warning(request, str(error))
     else:
-        messages.warning(request, f"Pedido #{order.id} não pôde ser aprovado.")
+        if result.created:
+            messages.success(request, f"Pedido #{order.id} aprovado com sucesso.")
+        else:
+            messages.info(request, f"Pedido #{order.id} já estava aprovado.")
 
     return redirect("orders:order_detail", order_id=order.id)
 
@@ -336,12 +435,31 @@ def cancel_paid_order_with_stock_return(request, order_id):
 
     company = get_user_company(request.user)
     order = get_object_or_404(Order, id=order_id, company=company)
-    order.cancel_paid_and_return_stock(user=request.user)
-
-    messages.warning(
-        request,
-        f"Pedido #{order.id} cancelado e itens retornados ao estoque.",
-    )
+    try:
+        result = cancel_paid_order_with_stock_return_service(
+            order_id=order.id,
+            company=company,
+            user=request.user,
+        )
+    except UntraceableSaleStock:
+        messages.warning(
+            request,
+            "Esta venda é legada e não possui rastreabilidade suficiente para "
+            "um retorno automático seguro.",
+        )
+    except (OrderServiceError, StockServiceError) as error:
+        messages.warning(request, str(error))
+    else:
+        if result.restored:
+            messages.warning(
+                request,
+                f"Pedido #{order.id} cancelado e itens retornados ao estoque.",
+            )
+        else:
+            messages.info(
+                request,
+                f"Pedido #{order.id} já estava cancelado; nenhum novo retorno foi feito.",
+            )
 
     return redirect("orders:order_detail", order_id=order.id)
 

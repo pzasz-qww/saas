@@ -2,9 +2,10 @@ from decimal import Decimal
 
 from django.conf import settings
 from django.db import models
+from django.core.exceptions import ValidationError
 
 from companies.models import Company
-from products.models import Product, StockMovement
+from products.models import Product
 
 
 class Sale(models.Model):
@@ -87,33 +88,19 @@ class SaleItem(models.Model):
         verbose_name_plural = "Itens da venda"
 
     def save(self, *args, **kwargs):
-        is_new = self.pk is None
-
         if self.company_id is None and self.sale_id is not None:
             self.company = self.sale.company
 
-        if self.unit_price == 0:
-            self.unit_price = self.product.sale_price
+        if self.sale_id and self.company_id != self.sale.company_id:
+            raise ValidationError("O item deve pertencer à mesma empresa da venda.")
 
-        if self.unit_cost == 0:
-            self.unit_cost = self.product.average_cost
+        if self.product_id and self.company_id != self.product.company_id:
+            raise ValidationError("O produto deve pertencer à mesma empresa da venda.")
 
         self.total_price = self.quantity * self.unit_price
         self.total_cost = self.quantity * self.unit_cost
 
         super().save(*args, **kwargs)
-
-        if is_new:
-            StockMovement.objects.create(
-                company=self.company,
-                product=self.product,
-                movement_type="sale",
-                quantity=self.quantity,
-                sale_value=self.total_price,
-                cost_value=self.total_cost,
-                reason=f"Venda #{self.sale.id}",
-                created_by=self.sale.created_by,
-            )
 
         self.sale.recalculate_totals()
 
