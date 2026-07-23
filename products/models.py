@@ -1,10 +1,13 @@
 from decimal import Decimal
 
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.db import models
 from django.db.models import Q, Sum
 
 from companies.models import Company
+
+from .category_names import clean_category_name, normalize_category_name
 
 
 class Unit(models.Model):
@@ -20,6 +23,107 @@ class Unit(models.Model):
 
     def __str__(self):
         return self.symbol
+
+
+class Category(models.Model):
+    company = models.ForeignKey(
+        Company,
+        on_delete=models.CASCADE,
+        related_name="product_categories",
+    )
+    name = models.CharField(max_length=80)
+    normalized_name = models.CharField(max_length=255, editable=False)
+    active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "Categoria"
+        verbose_name_plural = "Categorias"
+        ordering = ("name", "id")
+        constraints = [
+            models.UniqueConstraint(
+                fields=("company", "normalized_name"),
+                name="uniq_category_company_norm",
+            ),
+            models.CheckConstraint(
+                condition=~Q(name="") & ~Q(normalized_name=""),
+                name="category_names_not_empty",
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=("normalized_name",),
+                name="category_norm_idx",
+            ),
+            models.Index(
+                fields=("company", "active", "name"),
+                name="category_company_list_idx",
+            ),
+        ]
+
+    def _prepare_name(self):
+        self.name = clean_category_name(self.name)
+        self.normalized_name = normalize_category_name(self.name)
+
+        if not self.name or not self.normalized_name:
+            raise ValidationError({"name": "Informe um nome de categoria válido."})
+
+        name_max_length = self._meta.get_field("name").max_length
+        if len(self.name) > name_max_length:
+            raise ValidationError(
+                {"name": f"O nome deve ter no máximo {name_max_length} caracteres."}
+            )
+
+        normalized_max_length = self._meta.get_field(
+            "normalized_name"
+        ).max_length
+        if len(self.normalized_name) > normalized_max_length:
+            raise ValidationError(
+                {"name": "O nome informado é muito longo após a normalização."}
+            )
+
+    def _validate_company_unchanged(self):
+        if self.pk is None:
+            return
+
+        category_manager = type(self).objects
+        if self._state.db is not None:
+            category_manager = category_manager.using(self._state.db)
+
+        original_company_id = (
+            category_manager.filter(pk=self.pk)
+            .values_list("company_id", flat=True)
+            .first()
+        )
+        if (
+            original_company_id is not None
+            and self.company_id != original_company_id
+        ):
+            raise ValidationError(
+                {"company": "A empresa de uma categoria existente não pode ser alterada."}
+            )
+
+    def full_clean(self, *args, **kwargs):
+        self._prepare_name()
+        return super().full_clean(*args, **kwargs)
+
+    def clean(self):
+        super().clean()
+        self._prepare_name()
+        self._validate_company_unchanged()
+
+    def save(self, *args, **kwargs):
+        self._prepare_name()
+        self._validate_company_unchanged()
+
+        update_fields = kwargs.get("update_fields")
+        if update_fields is not None and "name" in update_fields:
+            kwargs["update_fields"] = set(update_fields) | {"normalized_name"}
+
+        return super().save(*args, **kwargs)
+
+    def __str__(self):
+        return self.name
 
 
 class Product(models.Model):
@@ -38,7 +142,14 @@ class Product(models.Model):
     company = models.ForeignKey(Company, on_delete=models.CASCADE)
 
     name = models.CharField(max_length=120)
-    category = models.CharField(max_length=80, blank=True, null=True)
+    category_legacy = models.CharField(max_length=80, blank=True, null=True)
+    category = models.ForeignKey(
+        Category,
+        on_delete=models.RESTRICT,
+        blank=True,
+        null=True,
+        related_name="products",
+    )
     product_type = models.CharField(max_length=30, choices=PRODUCT_TYPES, default="sale")
 
     unit = models.ForeignKey(Unit, on_delete=models.PROTECT)
@@ -65,6 +176,33 @@ class Product(models.Model):
         verbose_name = "Produto"
         verbose_name_plural = "Produtos"
         ordering = ["name"]
+
+    def clean(self):
+        super().clean()
+        errors = {}
+
+        valid_product_types = {value for value, _label in self.PRODUCT_TYPES}
+        if self.product_type not in valid_product_types:
+            errors["product_type"] = "Selecione um tipo de produto válido."
+
+        if self.company_id is not None and self.category_id is not None:
+            category_company_id = (
+                Category.objects.filter(pk=self.category_id)
+                .values_list("company_id", flat=True)
+                .first()
+            )
+            if (
+                category_company_id is not None
+                and category_company_id != self.company_id
+            ):
+                errors["category"] = "Selecione uma categoria da mesma empresa."
+
+        if errors:
+            raise ValidationError(errors)
+
+    def save(self, *args, **kwargs):
+        self.clean()
+        return super().save(*args, **kwargs)
 
     @property
     def current_stock(self):
