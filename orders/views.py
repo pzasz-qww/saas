@@ -225,14 +225,18 @@ def pdv_view(request):
             active=True,
             product_type__in=SALEABLE_PRODUCT_TYPES,
         )
-        .select_related("unit")
-        .order_by("category", "name")
+        .select_related("category", "unit")
+        .order_by("category__name", "name")
     )
 
     categories = defaultdict(list)
 
     for product in products:
-        category_name = product.category or "Sem categoria"
+        category_name = (
+            product.category.name
+            if product.category_id
+            else "Sem categoria"
+        )
         categories[category_name].append(product)
 
     draft = request.session.pop(PDV_DRAFT_SESSION_KEY, {})

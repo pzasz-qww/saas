@@ -8,6 +8,7 @@ from django.utils import timezone
 from accounts.models import Profile
 from companies.models import Company
 from orders.models import Order, OrderItem
+from products.category_services import resolve_category
 from products.models import Product, StockEntry, Unit
 
 
@@ -48,12 +49,21 @@ def make_product(
     name=None,
     sale_price="10.00",
     product_type="sale",
+    category=None,
+    category_name="Testes",
 ):
+    if category is None and category_name is not None:
+        category = resolve_category(
+            company=company,
+            raw_name=category_name,
+        )
+
     return Product.objects.create(
         company=company,
         unit=unit or make_unit(company=company),
         name=name or unique("Produto"),
-        category="Testes",
+        category=category,
+        category_legacy=category.name if category else None,
         product_type=product_type,
         sale_price=D(sale_price),
         minimum_quantity=D("0.00"),
