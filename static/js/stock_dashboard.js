@@ -28,11 +28,11 @@ function buildCategoryButtons() {
         const button = document.createElement("button");
         button.type = "button";
         button.className = "filter-button";
-        button.innerText = category;
+        button.textContent = category;
 
-        button.onclick = function () {
+        button.addEventListener("click", () => {
             setCategoryFilter(category, button);
-        };
+        });
 
         container.appendChild(button);
     });
@@ -115,7 +115,7 @@ function applyFilters() {
 
     noResults.style.display = visibleCount === 0 ? "block" : "none";
 
-    counter.innerText = `${visibleCount} de ${totalCount} produtos exibidos`;
+    counter.textContent = `${visibleCount} de ${totalCount} produtos exibidos`;
 }
 
 buildCategoryButtons();

@@ -4,6 +4,8 @@ from xml.sax.saxutils import escape
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
+from django.core.exceptions import ValidationError
+from django.db import transaction
 from django.db.models import (
     Case,
     DecimalField,
@@ -31,6 +33,8 @@ from accounts.permissions import (
     get_user_company,
 )
 
+from .category_names import clean_category_name
+from .category_services import resolve_category
 from .models import Product, StockEntry, StockMovement, Unit
 from .services import (
     StockServiceError,
@@ -67,7 +71,7 @@ def _get_stock_products_queryset(company):
     return (
         Product.objects
         .filter(company=company, active=True)
-        .select_related("company", "unit")
+        .select_related("category", "company", "unit")
         .annotate(
             annotated_current_stock=Coalesce(
                 Sum("stock_entries__remaining_quantity"),
@@ -104,7 +108,7 @@ def _get_stock_products_queryset(company):
                 output_field=average_cost_field,
             ),
         )
-        .order_by("category", "name")
+        .order_by("category__name", "name")
     )
 
 
@@ -169,7 +173,11 @@ def shopping_list(request):
 
         row = {
             "product": product,
-            "category": product.category or "Sem categoria",
+            "category": (
+                product.category.name
+                if product.category_id
+                else "Sem categoria"
+            ),
             "current_stock": current_stock,
             "recommended_stock": recommended_stock,
             "recommended_defined": recommended_stock > 0,
@@ -235,7 +243,7 @@ def stock_report_pdf(request):
     products = (
         Product.objects
         .filter(company=company, active=True)
-        .select_related("unit")
+        .select_related("category", "unit")
         .annotate(
             report_current_stock=Coalesce(
                 Sum("stock_entries__remaining_quantity"),
@@ -243,7 +251,7 @@ def stock_report_pdf(request):
                 output_field=DecimalField(max_digits=12, decimal_places=2),
             )
         )
-        .order_by("category", "name")
+        .order_by("category__name", "name")
     )
 
     emitted_at = timezone.localtime()
@@ -323,7 +331,14 @@ def stock_report_pdf(request):
 
         table_data.append([
             Paragraph(escape(product.name), cell_style),
-            Paragraph(escape(product.category or "Sem categoria"), cell_style),
+            Paragraph(
+                escape(
+                    product.category.name
+                    if product.category_id
+                    else "Sem categoria"
+                ),
+                cell_style,
+            ),
             escape(product.unit.symbol),
             f"{current_stock:.2f}".replace(".", ","),
             recommended_stock,
@@ -388,7 +403,7 @@ def product_create(request):
 
     if request.method == "POST":
         name = request.POST.get("name", "").strip()
-        category = request.POST.get("category", "").strip()
+        category_text = clean_category_name(request.POST.get("category", ""))
         product_type = request.POST.get("product_type", "sale")
         unit_id = request.POST.get("unit")
         sale_price = parse_decimal(request.POST.get("sale_price"))
@@ -397,6 +412,15 @@ def product_create(request):
 
         if not name:
             messages.warning(request, "Informe o nome do produto.")
+            return redirect("products:product_create")
+
+        valid_product_types = {value for value, _label in Product.PRODUCT_TYPES}
+        if product_type not in valid_product_types:
+            messages.warning(request, "Os dados informados para o produto são inválidos.")
+            return redirect("products:product_create")
+
+        if "category_id" in request.POST:
+            messages.warning(request, "Os dados informados para o produto são inválidos.")
             return redirect("products:product_create")
 
         if sale_price is None or sale_price < 0:
@@ -408,16 +432,26 @@ def product_create(request):
 
         unit = get_object_or_404(Unit, id=unit_id, company=company)
 
-        Product.objects.create(
-            company=company,
-            name=name,
-            category=category,
-            product_type=product_type,
-            unit=unit,
-            sale_price=sale_price,
-            minimum_quantity=minimum_quantity,
-            active=active,
-        )
+        try:
+            with transaction.atomic():
+                category = resolve_category(
+                    company=company,
+                    raw_name=category_text,
+                )
+                Product.objects.create(
+                    company=company,
+                    name=name,
+                    category=category,
+                    category_legacy=category_text or None,
+                    product_type=product_type,
+                    unit=unit,
+                    sale_price=sale_price,
+                    minimum_quantity=minimum_quantity,
+                    active=active,
+                )
+        except ValidationError:
+            messages.warning(request, "Os dados informados para o produto são inválidos.")
+            return redirect("products:product_create")
 
         messages.success(request, f"Produto cadastrado: {name}.")
         return redirect("products:stock_dashboard")
@@ -443,8 +477,8 @@ def stock_entry_create(request):
     products = (
         Product.objects
         .filter(company=company, active=True)
-        .select_related("unit")
-        .order_by("category", "name")
+        .select_related("category", "unit")
+        .order_by("category__name", "name")
     )
 
     if request.method == "POST":
@@ -525,8 +559,8 @@ def stock_count_adjust(request):
     products = (
         Product.objects
         .filter(company=company, active=True)
-        .select_related("unit")
-        .order_by("category", "name")
+        .select_related("category", "unit")
+        .order_by("category__name", "name")
     )
 
     if request.method == "POST":

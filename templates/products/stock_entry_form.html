@@ -53,15 +53,15 @@
                         type="button"
                         class="product-card"
                         data-id="{{ product.id }}"
-                        data-name="{{ product.name|escapejs }}"
-                        data-category="{{ product.category|default:'Sem categoria'|escapejs }}"
-                        data-unit="{{ product.unit|escapejs }}"
+                        data-name="{{ product.name }}"
+                        data-category="{{ product.category.name|default:'' }}"
+                        data-unit="{{ product.unit }}"
                         data-price="{{ product.sale_price|floatformat:2 }}"
-                        data-search="{{ product.name|lower }} {{ product.category|default:''|lower }} {{ product.unit|lower }} {{ product.sale_price }}"
+                        data-search="{{ product.name|lower }} {{ product.category.name|default:''|lower }} {{ product.unit|lower }} {{ product.sale_price }}"
                     >
                         <div class="product-name">{{ product.name }}</div>
                         <div class="product-meta">
-                            {{ product.category|default:"Sem categoria" }}<br>
+                            {{ product.category.name|default:"Sem categoria" }}<br>
                             Unidade: {{ product.unit }}<br>
                             Venda: R$ {{ product.sale_price|floatformat:2 }}
                         </div>

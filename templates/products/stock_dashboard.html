@@ -112,9 +112,9 @@
                             class="stock-row"
                             data-product-id="{{ product.id }}"
                             data-name="{{ product.name|escape }}"
-                            data-category="{{ product.category|default:'Sem categoria'|escapejs }}"
+                            data-category="{{ product.category.name|default:'' }}"
                             data-status="{{ product.stock_status }}"
-                            data-search="{{ product.name|lower }} {{ product.category|default:''|lower }} {{ product.unit|lower }} {{ product.stock_status_label|lower }} estoque recomendado {{ product.sale_price }}"
+                            data-search="{{ product.name|lower }} {{ product.category.name|default:''|lower }} {{ product.unit|lower }} {{ product.stock_status_label|lower }} estoque recomendado {{ product.sale_price }}"
                         >
                             <td>
                                 <div class="product-name">{{ product.name }}</div>
@@ -125,7 +125,7 @@
 
                             <td>
                                 <span class="badge">
-                                    {{ product.category|default:"Sem categoria" }}
+                                    {{ product.category.name|default:"Sem categoria" }}
                                 </span>
                             </td>
 
@@ -179,16 +179,16 @@
                         class="stock-mobile-card stock-mobile-card--{{ product.stock_status }}"
                         data-product-id="{{ product.id }}"
                         data-name="{{ product.name|escape }}"
-                        data-category="{{ product.category|default:'Sem categoria'|escapejs }}"
+                        data-category="{{ product.category.name|default:'' }}"
                         data-status="{{ product.stock_status }}"
-                        data-search="{{ product.name|lower }} {{ product.category|default:''|lower }} {{ product.unit|lower }} {{ product.stock_status_label|lower }} estoque recomendado {{ product.sale_price }}"
+                        data-search="{{ product.name|lower }} {{ product.category.name|default:''|lower }} {{ product.unit|lower }} {{ product.stock_status_label|lower }} estoque recomendado {{ product.sale_price }}"
                     >
                         <div class="stock-mobile-card-header">
                             <div class="stock-mobile-product">
                                 <h2>{{ product.name }}</h2>
                                 <div class="stock-mobile-product-meta">
                                     <span class="stock-mobile-category">
-                                        {{ product.category|default:"Sem categoria" }}
+                                        {{ product.category.name|default:"Sem categoria" }}
                                     </span>
                                     {% if product.unit %}
                                         <span>Unidade: {{ product.unit }}</span>
