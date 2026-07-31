@@ -1,10 +1,11 @@
 import json
 from collections import defaultdict
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
-from django.db.models import Q
+from django.db import transaction
+from django.db.models import Prefetch, Q
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
 
@@ -17,23 +18,32 @@ from accounts.permissions import (
     can_discard_paid_order,
     can_mark_delivered,
     can_view_orders_panel,
-    get_user_company,
+    company_required,
 )
 from products.models import Product
+from sales.models import Sale
 from .models import Order, OrderItem
 
 
+def order_items_for_company(company):
+    return (
+        OrderItem.objects
+        .filter(
+            company=company,
+            product__company=company,
+        )
+        .select_related("product")
+    )
+
+
 @login_required
+@company_required
 def pdv_view(request):
+    company = request.current_company
+
     if not can_access_pdv(request.user):
         messages.warning(request, "Você não tem permissão para acessar o PDV.")
         return redirect("/admin/")
-
-    company = get_user_company(request.user)
-
-    if company is None:
-        messages.warning(request, "Cadastre uma empresa antes de usar o PDV.")
-        return redirect("/admin/companies/company/")
 
     if request.method == "POST":
         if not can_create_order(request.user):
@@ -48,34 +58,66 @@ def pdv_view(request):
         except json.JSONDecodeError:
             cart_items = []
 
-        if not cart_items:
+        if not isinstance(cart_items, list) or not cart_items:
             messages.warning(request, "Adicione pelo menos um item ao pedido.")
             return redirect("orders:pdv")
 
-        order = Order.objects.create(
-            company=company,
-            table_or_tab=table_or_tab,
-            status="pre_sale",
-            created_by=request.user,
-        )
+        with transaction.atomic():
+            validated_items = []
 
-        for item in cart_items:
-            product_id = item.get("id")
-            quantity = Decimal(str(item.get("quantity", 1)))
+            for item in cart_items:
+                if not isinstance(item, dict):
+                    messages.warning(request, "O carrinho enviado é inválido.")
+                    return redirect("orders:pdv")
 
-            product = get_object_or_404(
-                Product,
-                id=product_id,
+                try:
+                    product_id = int(item.get("id"))
+                except (TypeError, ValueError):
+                    messages.warning(request, "O carrinho enviado é inválido.")
+                    return redirect("orders:pdv")
+
+                try:
+                    quantity = Decimal(str(item.get("quantity", 1)))
+                except (InvalidOperation, TypeError, ValueError):
+                    messages.warning(
+                        request,
+                        "Informe uma quantidade válida para todos os itens.",
+                    )
+                    return redirect("orders:pdv")
+
+                if (
+                    not quantity.is_finite()
+                    or quantity <= 0
+                    or quantity > Decimal("99999999.99")
+                ):
+                    messages.warning(
+                        request,
+                        "A quantidade dos itens deve ser maior que zero.",
+                    )
+                    return redirect("orders:pdv")
+
+                product = get_object_or_404(
+                    Product,
+                    id=product_id,
+                    company=company,
+                    active=True,
+                )
+                validated_items.append((product, quantity))
+
+            order = Order.objects.create(
                 company=company,
-                active=True,
+                table_or_tab=table_or_tab,
+                status="pre_sale",
+                created_by=request.user,
             )
 
-            OrderItem.objects.create(
-                order=order,
-                company=company,
-                product=product,
-                quantity=quantity,
-            )
+            for product, quantity in validated_items:
+                OrderItem.objects.create(
+                    order=order,
+                    company=company,
+                    product=product,
+                    quantity=quantity,
+                )
 
         messages.success(request, f"Pedido #{order.id} enviado como pré-venda.")
 
@@ -108,19 +150,26 @@ def pdv_view(request):
 
 
 @login_required
+@company_required
 def orders_panel(request):
+    company = request.current_company
+
     if not can_view_orders_panel(request.user):
         messages.warning(request, "Você não tem permissão para ver o painel de pedidos.")
         return redirect("orders:pdv")
 
-    company = get_user_company(request.user)
     search_query = request.GET.get("q", "").strip()
 
     orders = (
         Order.objects
         .filter(company=company, status__in=["pre_sale", "sold", "delivered"])
         .select_related("company", "created_by", "approved_by", "sale")
-        .prefetch_related("items__product")
+        .prefetch_related(
+            Prefetch(
+                "items",
+                queryset=order_items_for_company(company),
+            )
+        )
         .order_by("-created_at")
     )
 
@@ -129,7 +178,11 @@ def orders_panel(request):
             Q(created_by__username__icontains=search_query)
             | Q(created_by__first_name__icontains=search_query)
             | Q(created_by__last_name__icontains=search_query)
-            | Q(items__product__name__icontains=search_query)
+            | Q(
+                items__company=company,
+                items__product__company=company,
+                items__product__name__icontains=search_query,
+            )
             | Q(table_or_tab__icontains=search_query)
         )
 
@@ -166,12 +219,20 @@ def orders_panel(request):
 
 
 @login_required
+@company_required
 def order_detail(request, order_id):
+    company = request.current_company
     order = get_object_or_404(
         Order.objects
         .select_related("company", "created_by", "approved_by", "sale")
-        .prefetch_related("items__product"),
+        .prefetch_related(
+            Prefetch(
+                "items",
+                queryset=order_items_for_company(company),
+            )
+        ),
         id=order_id,
+        company=company,
     )
 
     can_view_this_order = (
@@ -198,13 +259,26 @@ def order_detail(request, order_id):
 
 
 @login_required
+@company_required
 @require_POST
 def approve_order(request, order_id, payment_method):
+    company = request.current_company
+
     if not can_approve_order(request.user):
         messages.warning(request, "Você não tem permissão para aprovar vendas.")
         return redirect("orders:order_detail", order_id=order_id)
 
-    order = get_object_or_404(Order, id=order_id)
+    order = get_object_or_404(Order, id=order_id, company=company)
+
+    valid_payment_methods = {
+        value
+        for value, _label in Sale.PAYMENT_METHODS
+    }
+
+    if payment_method not in valid_payment_methods:
+        messages.warning(request, "Forma de pagamento inválida.")
+        return redirect("orders:order_detail", order_id=order.id)
+
     sale = order.approve(payment_method=payment_method, user=request.user)
 
     if sale:
@@ -216,13 +290,16 @@ def approve_order(request, order_id, payment_method):
 
 
 @login_required
+@company_required
 @require_POST
 def mark_order_delivered(request, order_id):
+    company = request.current_company
+
     if not can_mark_delivered(request.user):
         messages.warning(request, "Você não tem permissão para marcar pedidos como entregues.")
         return redirect("orders:order_detail", order_id=order_id)
 
-    order = get_object_or_404(Order, id=order_id)
+    order = get_object_or_404(Order, id=order_id, company=company)
     order.mark_delivered()
 
     messages.success(request, f"Pedido #{order.id} marcado como entregue.")
@@ -231,13 +308,16 @@ def mark_order_delivered(request, order_id):
 
 
 @login_required
+@company_required
 @require_POST
 def cancel_order(request, order_id):
+    company = request.current_company
+
     if not can_cancel_pre_sale(request.user):
         messages.warning(request, "Você não tem permissão para cancelar pré-vendas.")
         return redirect("orders:order_detail", order_id=order_id)
 
-    order = get_object_or_404(Order, id=order_id)
+    order = get_object_or_404(Order, id=order_id, company=company)
     order.cancel()
 
     messages.warning(request, f"Pedido #{order.id} cancelado.")
@@ -246,8 +326,11 @@ def cancel_order(request, order_id):
 
 
 @login_required
+@company_required
 @require_POST
 def cancel_paid_order_with_stock_return(request, order_id):
+    company = request.current_company
+
     if not can_cancel_paid_order(request.user):
         messages.warning(
             request,
@@ -255,7 +338,7 @@ def cancel_paid_order_with_stock_return(request, order_id):
         )
         return redirect("orders:order_detail", order_id=order_id)
 
-    order = get_object_or_404(Order, id=order_id)
+    order = get_object_or_404(Order, id=order_id, company=company)
     order.cancel_paid_and_return_stock(user=request.user)
 
     messages.warning(
@@ -267,8 +350,11 @@ def cancel_paid_order_with_stock_return(request, order_id):
 
 
 @login_required
+@company_required
 @require_POST
 def discard_paid_order(request, order_id):
+    company = request.current_company
+
     if not can_discard_paid_order(request.user):
         messages.warning(
             request,
@@ -276,7 +362,7 @@ def discard_paid_order(request, order_id):
         )
         return redirect("orders:order_detail", order_id=order_id)
 
-    order = get_object_or_404(Order, id=order_id)
+    order = get_object_or_404(Order, id=order_id, company=company)
     order.discard_paid_order(user=request.user)
 
     messages.warning(

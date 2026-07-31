@@ -1,6 +1,7 @@
 from decimal import Decimal
 
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils import timezone
 
@@ -71,10 +72,25 @@ class Order(models.Model):
         verbose_name_plural = "Pedidos"
         ordering = ["-created_at"]
 
+    def save(self, *args, **kwargs):
+        if (
+            self.sale_id
+            and self.company_id
+            and self.sale.company_id != self.company_id
+        ):
+            raise ValidationError(
+                "A venda e o pedido devem pertencer à mesma empresa."
+            )
+
+        super().save(*args, **kwargs)
+
     def recalculate_total(self):
         total = Decimal("0.00")
 
-        for item in self.items.all():
+        for item in self.items.filter(
+            company=self.company,
+            product__company=self.company,
+        ):
             total += item.total_price
 
         self.total_amount = total
@@ -87,13 +103,24 @@ class Order(models.Model):
         if self.status in ["cancelled", "discarded"]:
             return None
 
+        valid_payment_methods = {
+            value
+            for value, _label in Sale.PAYMENT_METHODS
+        }
+
+        if payment_method not in valid_payment_methods:
+            raise ValidationError("Forma de pagamento inválida.")
+
         sale = Sale.objects.create(
             company=self.company,
             payment_method=payment_method,
             created_by=user,
         )
 
-        for item in self.items.all():
+        for item in self.items.filter(
+            company=self.company,
+            product__company=self.company,
+        ):
             SaleItem.objects.create(
                 sale=sale,
                 company=self.company,
@@ -148,7 +175,10 @@ class Order(models.Model):
         if not self.sale:
             return
 
-        for item in self.sale.items.all():
+        for item in self.sale.items.filter(
+            company=self.company,
+            product__company=self.company,
+        ):
             StockMovement.objects.create(
                 company=self.company,
                 product=item.product,
@@ -204,8 +234,29 @@ class OrderItem(models.Model):
         verbose_name_plural = "Itens do pedido"
 
     def save(self, *args, **kwargs):
-        if self.company_id is None and self.order_id is not None:
-            self.company = self.order.company
+        if self.quantity is None or self.quantity <= 0:
+            raise ValidationError(
+                "A quantidade do item deve ser maior que zero."
+            )
+
+        if self.order_id is not None:
+            order_company_id = self.order.company_id
+
+            if self.company_id not in (None, order_company_id):
+                raise ValidationError(
+                    "O item e o pedido devem pertencer à mesma empresa."
+                )
+
+            self.company_id = order_company_id
+
+        if (
+            self.product_id is not None
+            and self.company_id is not None
+            and self.product.company_id != self.company_id
+        ):
+            raise ValidationError(
+                "O produto e o pedido devem pertencer à mesma empresa."
+            )
 
         if self.unit_price == 0:
             self.unit_price = self.product.sale_price

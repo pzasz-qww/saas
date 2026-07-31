@@ -1,10 +1,50 @@
 <div class="app-topbar">
-    <div>
+    <div class="app-identity">
         <div class="app-brand">Bar SaaS</div>
 
         {% if menu_permissions.is_authenticated %}
-            <div class="app-user">
-                Usuário: {{ menu_permissions.username }}
+            {% if menu_permissions.is_support_user %}
+                <div class="app-company-status app-company-status--support" role="alert">
+                    {% if menu_permissions.has_company %}
+                        <strong>&#9888; Modo suporte · Visualizando: {{ menu_permissions.company_name }}</strong>
+
+                        {% if not menu_permissions.company_is_active %}
+                            <span>Empresa inativa · Operações indisponíveis</span>
+                        {% endif %}
+
+                        <div class="support-company-controls">
+                            <a href="{% url 'accounts:support_companies' %}">Trocar empresa</a>
+                            <form method="post" action="{% url 'accounts:clear_support_company' %}">
+                                {% csrf_token %}
+                                <button type="submit">Sair do modo suporte</button>
+                            </form>
+                        </div>
+                    {% else %}
+                        <strong>&#9888; Modo suporte · Nenhuma empresa selecionada</strong>
+                        <a href="{% url 'accounts:support_companies' %}">Selecionar empresa</a>
+                    {% endif %}
+                </div>
+            {% elif menu_permissions.has_company and not menu_permissions.company_is_active %}
+                <div class="app-company-status app-company-status--missing" role="alert">
+                    <strong>&#9888; Empresa inativa</strong>
+                    <span>{{ menu_permissions.company_name }}</span>
+                </div>
+            {% elif menu_permissions.has_company %}
+                <div class="app-company-status">
+                    Empresa: <strong>{{ menu_permissions.company_name }}</strong>
+                </div>
+            {% else %}
+                <div class="app-company-status app-company-status--missing" role="alert">
+                    <strong>&#9888; Nenhuma empresa vinculada</strong>
+                    <span>As operações estão indisponíveis.</span>
+                </div>
+            {% endif %}
+
+            <div class="app-user-context">
+                <span>Usuário: <strong>{{ menu_permissions.username }}</strong></span>
+                {% if not menu_permissions.is_support_user %}
+                    <span>Função: <strong>{{ menu_permissions.role_name|default:"Não vinculada" }}</strong></span>
+                {% endif %}
             </div>
         {% endif %}
     </div>
@@ -14,30 +54,47 @@
     </button>
 
     <div id="mainDropdownMenu" class="dropdown-menu">
-        {% if menu_permissions.can_adjust_stock %}
-            <a href="{% url 'products:stock_count_adjust' %}">Conferência de estoque</a>
-        {% endif %}
+        {% if menu_permissions.is_authenticated and menu_permissions.has_company and menu_permissions.company_is_active %}
+            {% if menu_permissions.can_adjust_stock %}
+                <a href="{% url 'products:stock_count_adjust' %}">Conferência de estoque</a>
+            {% endif %}
 
-        {% if menu_permissions.can_access_pdv %}
-            <a href="{% url 'orders:pdv' %}">PDV</a>
-        {% endif %}
+            {% if menu_permissions.can_access_pdv %}
+                <a href="{% url 'orders:pdv' %}">PDV</a>
+            {% endif %}
 
-        {% if menu_permissions.can_view_orders_panel %}
-            <a href="{% url 'orders:orders_panel' %}">Pedidos</a>
-        {% endif %}
+            {% if menu_permissions.can_view_orders_panel %}
+                <a href="{% url 'orders:orders_panel' %}">Pedidos</a>
+            {% endif %}
 
-        {% if menu_permissions.can_view_stock %}
-            <a href="{% url 'products:stock_dashboard' %}">Estoque</a>
-        {% endif %}
+            {% if menu_permissions.can_view_stock %}
+                <a href="{% url 'products:stock_dashboard' %}">Estoque</a>
+            {% endif %}
 
-        {% if menu_permissions.can_create_stock_entry %}
-            <a href="{% url 'products:stock_entry_create' %}">Nova entrada de estoque</a>
-            <a href="{% url 'products:product_create' %}">Novo produto</a>
-        {% endif %}
+            {% if menu_permissions.can_create_stock_entry %}
+                <a href="{% url 'products:stock_entry_create' %}">Nova entrada de estoque</a>
+                <a href="{% url 'products:product_create' %}">Novo produto</a>
+            {% endif %}
 
-        {% if menu_permissions.can_manage_users %}
-            <div class="dropdown-divider"></div>
-            <a href="{% url 'accounts:people_management' %}">Equipe</a>
+            {% if menu_permissions.can_manage_users %}
+                <div class="dropdown-divider"></div>
+                <a href="{% url 'accounts:people_management' %}">Equipe</a>
+            {% endif %}
+        {% elif menu_permissions.is_authenticated %}
+            <div class="menu-disabled-message" aria-disabled="true">
+                {% if menu_permissions.is_support_user %}
+                    {% if menu_permissions.has_company %}
+                        Escolha uma empresa ativa para liberar as operações.
+                    {% else %}
+                        Selecione uma empresa para liberar as operações.
+                    {% endif %}
+                    <a href="{% url 'accounts:support_companies' %}">Selecionar empresa</a>
+                {% elif menu_permissions.has_company %}
+                    Reative a empresa para liberar as operações.
+                {% else %}
+                    Vincule uma empresa para liberar as operações.
+                {% endif %}
+            </div>
         {% endif %}
 
         {% if menu_permissions.can_access_admin %}

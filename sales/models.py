@@ -1,6 +1,7 @@
 from decimal import Decimal
 
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.db import models
 
 from companies.models import Company
@@ -49,11 +50,25 @@ class Sale(models.Model):
         verbose_name_plural = "Vendas"
         ordering = ["-created_at"]
 
+    def save(self, *args, **kwargs):
+        valid_payment_methods = {
+            value
+            for value, _label in self.PAYMENT_METHODS
+        }
+
+        if self.payment_method not in valid_payment_methods:
+            raise ValidationError("Forma de pagamento inválida.")
+
+        super().save(*args, **kwargs)
+
     def recalculate_totals(self):
         total_amount = Decimal("0.00")
         total_cost = Decimal("0.00")
 
-        for item in self.items.all():
+        for item in self.items.filter(
+            company=self.company,
+            product__company=self.company,
+        ):
             total_amount += item.total_price
             total_cost += item.total_cost
 
@@ -89,8 +104,29 @@ class SaleItem(models.Model):
     def save(self, *args, **kwargs):
         is_new = self.pk is None
 
-        if self.company_id is None and self.sale_id is not None:
-            self.company = self.sale.company
+        if self.quantity is None or self.quantity <= 0:
+            raise ValidationError(
+                "A quantidade do item deve ser maior que zero."
+            )
+
+        if self.sale_id is not None:
+            sale_company_id = self.sale.company_id
+
+            if self.company_id not in (None, sale_company_id):
+                raise ValidationError(
+                    "O item e a venda devem pertencer à mesma empresa."
+                )
+
+            self.company_id = sale_company_id
+
+        if (
+            self.product_id is not None
+            and self.company_id is not None
+            and self.product.company_id != self.company_id
+        ):
+            raise ValidationError(
+                "O produto e a venda devem pertencer à mesma empresa."
+            )
 
         if self.unit_price == 0:
             self.unit_price = self.product.sale_price

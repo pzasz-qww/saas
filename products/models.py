@@ -1,6 +1,7 @@
 from decimal import Decimal
 
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.db import models
 from django.db.models import Sum
 
@@ -60,14 +61,31 @@ class Product(models.Model):
         verbose_name_plural = "Produtos"
         ordering = ["name"]
 
+    def save(self, *args, **kwargs):
+        if (
+            self.company_id
+            and self.unit_id
+            and self.unit.company_id != self.company_id
+        ):
+            raise ValidationError(
+                "A unidade e o produto devem pertencer à mesma empresa."
+            )
+
+        super().save(*args, **kwargs)
+
     @property
     def current_stock(self):
-        result = self.stock_entries.aggregate(total=Sum("remaining_quantity"))
+        result = self.stock_entries.filter(company=self.company).aggregate(
+            total=Sum("remaining_quantity")
+        )
         return result["total"] or Decimal("0.00")
 
     @property
     def average_cost(self):
-        entries = self.stock_entries.filter(remaining_quantity__gt=0)
+        entries = self.stock_entries.filter(
+            company=self.company,
+            remaining_quantity__gt=0,
+        )
 
         total_cost = Decimal("0.00")
         total_quantity = Decimal("0.00")
@@ -170,8 +188,15 @@ class StockEntry(models.Model):
         ordering = ["-created_at"]
 
     def save(self, *args, **kwargs):
-        if self.company_id is None and self.product_id is not None:
-            self.company = self.product.company
+        if self.product_id is not None:
+            product_company_id = self.product.company_id
+
+            if self.company_id not in (None, product_company_id):
+                raise ValidationError(
+                    "A entrada e o produto devem pertencer à mesma empresa."
+                )
+
+            self.company_id = product_company_id
 
         if (
             self.entry_mode == "detailed"
@@ -289,8 +314,24 @@ class StockMovement(models.Model):
             "return_to_stock",
         ]
 
-        if self.company_id is None and self.product_id is not None:
-            self.company = self.product.company
+        if self.product_id is not None:
+            product_company_id = self.product.company_id
+
+            if self.company_id not in (None, product_company_id):
+                raise ValidationError(
+                    "O movimento e o produto devem pertencer à mesma empresa."
+                )
+
+            self.company_id = product_company_id
+
+        if self.stock_entry_id is not None:
+            if (
+                self.stock_entry.company_id != self.company_id
+                or self.stock_entry.product_id != self.product_id
+            ):
+                raise ValidationError(
+                    "A entrada de estoque deve pertencer à mesma empresa e produto."
+                )
 
         if self.stock_entry is None and self.movement_type in negative_types:
             self.stock_entry = self.find_available_entry()

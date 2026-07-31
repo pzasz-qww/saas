@@ -10,7 +10,11 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/6.0/ref/settings/
 """
 
+import os
 from pathlib import Path
+
+import dj_database_url
+from django.core.exceptions import ImproperlyConfigured
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -19,13 +23,55 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
 
-# SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-msi_xeo!x$&_+8)xb=@vxvc^sa(8^1-u$1&jydyt@rw08julw2'
+def env_flag(name, default=False):
+    value = os.getenv(name)
 
-# SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+    if value is None:
+        return default
 
-ALLOWED_HOSTS = ["*"]
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+IS_PRODUCTION = env_flag("RENDER") or env_flag("PRODUCTION")
+DEBUG = env_flag("DEBUG", default=not IS_PRODUCTION)
+
+if IS_PRODUCTION and DEBUG:
+    raise ImproperlyConfigured("DEBUG deve permanecer desativado em produção.")
+
+SECRET_KEY = os.environ.get(
+    "SECRET_KEY",
+    "django-insecure-local-dev-key-saas-bar-nao-usar-em-producao",
+)
+
+if IS_PRODUCTION and (
+    len(SECRET_KEY) < 50
+    or SECRET_KEY.startswith("django-insecure-")
+):
+    raise ImproperlyConfigured(
+        "SECRET_KEY precisa ser forte e exclusiva em produção."
+    )
+
+allowed_hosts_from_environment = os.getenv("ALLOWED_HOSTS")
+
+if IS_PRODUCTION and not allowed_hosts_from_environment:
+    raise ImproperlyConfigured(
+        "Defina ALLOWED_HOSTS explicitamente em produção."
+    )
+
+allowed_hosts_value = (
+    allowed_hosts_from_environment
+    or "localhost,127.0.0.1,[::1]"
+)
+ALLOWED_HOSTS = [
+    host.strip()
+    for host in allowed_hosts_value.split(",")
+    if host.strip()
+]
+
+if IS_PRODUCTION and "*" in ALLOWED_HOSTS:
+    raise ImproperlyConfigured(
+        "ALLOWED_HOSTS não pode usar '*' em produção."
+    )
 
 
 # Application definitiona
@@ -48,6 +94,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -82,18 +129,46 @@ WSGI_APPLICATION = 'config.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/6.0/ref/settings/#databases
 
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+database_url = os.getenv("DATABASE_URL")
+
+if IS_PRODUCTION and not database_url:
+    raise ImproperlyConfigured(
+        "Defina DATABASE_URL para o banco persistente de produção."
+    )
+
+if database_url:
+    DATABASES = {
+        "default": dj_database_url.parse(
+            database_url,
+            conn_max_age=600,
+            conn_health_checks=True,
+        )
     }
-}
+else:
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.sqlite3',
+            'NAME': BASE_DIR / 'db.sqlite3',
+        }
+    }
 
 
 # Password validation
 # https://docs.djangoproject.com/en/6.0/ref/settings/#auth-password-validators
 
 AUTH_PASSWORD_VALIDATORS = [
+    {
+        "NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator",
+    },
+    {
+        "NAME": "django.contrib.auth.password_validation.MinimumLengthValidator",
+    },
+    {
+        "NAME": "django.contrib.auth.password_validation.CommonPasswordValidator",
+    },
+    {
+        "NAME": "django.contrib.auth.password_validation.NumericPasswordValidator",
+    },
 ]
 
 
@@ -112,7 +187,17 @@ USE_TZ = True
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
 
-STATIC_URL = 'static/'
+STATIC_URL = '/static/'
+STATIC_ROOT = BASE_DIR / "staticfiles"
+
+STORAGES = {
+    "default": {
+        "BACKEND": "django.core.files.storage.FileSystemStorage",
+    },
+    "staticfiles": {
+        "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
+    },
+}
 # Diretório de arquivos estáticos em desenvolvimento
 STATICFILES_DIRS = [
     BASE_DIR / 'static',
@@ -125,3 +210,12 @@ TIME_ZONE = 'America/Sao_Paulo'
 LOGIN_URL = "/accounts/login/"
 LOGIN_REDIRECT_URL = "/pdv/"
 LOGOUT_REDIRECT_URL = "/accounts/login/"
+
+if IS_PRODUCTION:
+    SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+    SECURE_SSL_REDIRECT = True
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    SECURE_HSTS_SECONDS = 31536000
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+    SECURE_HSTS_PRELOAD = True

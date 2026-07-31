@@ -4,7 +4,7 @@ from xml.sax.saxutils import escape
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
-from django.db.models import DecimalField, Sum, Value
+from django.db.models import DecimalField, Q, Sum, Value
 from django.db.models.functions import Coalesce
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
@@ -20,7 +20,7 @@ from accounts.permissions import (
     can_adjust_stock,
     can_create_stock_entry,
     can_view_stock,
-    get_user_company,
+    company_required,
 )
 
 from .models import Product, StockEntry, StockMovement, Unit
@@ -41,13 +41,33 @@ def parse_decimal(value):
         return None
 
 
+def stock_report_products_for_company(company):
+    return (
+        Product.objects
+        .filter(company=company, active=True)
+        .select_related("unit")
+        .annotate(
+            report_current_stock=Coalesce(
+                Sum(
+                    "stock_entries__remaining_quantity",
+                    filter=Q(stock_entries__company=company),
+                ),
+                Value(Decimal("0.00")),
+                output_field=DecimalField(max_digits=12, decimal_places=2),
+            )
+        )
+        .order_by("category", "name")
+    )
+
+
 @login_required
+@company_required
 def stock_dashboard(request):
     if not can_view_stock(request.user):
         messages.warning(request, "Você não tem permissão para ver o estoque.")
         return redirect("orders:pdv")
 
-    company = get_user_company(request.user)
+    company = request.current_company
 
     products = (
         Product.objects
@@ -68,31 +88,16 @@ def stock_dashboard(request):
 
 
 @login_required
+@company_required
 @require_GET
 def stock_report_pdf(request):
     if not can_view_stock(request.user):
         messages.warning(request, "Você não tem permissão para ver o estoque.")
         return redirect("orders:pdv")
 
-    company = get_user_company(request.user)
+    company = request.current_company
 
-    if company is None:
-        messages.warning(request, "Nenhuma empresa está vinculada ao seu usuário.")
-        return redirect("orders:pdv")
-
-    products = (
-        Product.objects
-        .filter(company=company, active=True)
-        .select_related("unit")
-        .annotate(
-            report_current_stock=Coalesce(
-                Sum("stock_entries__remaining_quantity"),
-                Value(Decimal("0.00")),
-                output_field=DecimalField(max_digits=12, decimal_places=2),
-            )
-        )
-        .order_by("category", "name")
-    )
+    products = stock_report_products_for_company(company)
 
     emitted_at = timezone.localtime()
     filename = f"estoque_geral_{emitted_at:%Y%m%d_%H%M}.pdf"
@@ -228,12 +233,13 @@ def stock_report_pdf(request):
 
 
 @login_required
+@company_required
 def product_create(request):
     if not can_create_stock_entry(request.user):
         messages.warning(request, "Você não tem permissão para cadastrar produtos.")
         return redirect("products:stock_dashboard")
 
-    company = get_user_company(request.user)
+    company = request.current_company
 
     units = Unit.objects.filter(company=company).order_by("name")
 
@@ -284,12 +290,13 @@ def product_create(request):
 
 
 @login_required
+@company_required
 def stock_entry_create(request):
     if not can_create_stock_entry(request.user):
         messages.warning(request, "Você não tem permissão para inserir estoque.")
         return redirect("products:stock_dashboard")
 
-    company = get_user_company(request.user)
+    company = request.current_company
 
     products = (
         Product.objects
@@ -366,12 +373,13 @@ def stock_entry_create(request):
 
 
 @login_required
+@company_required
 def stock_count_adjust(request):
     if not can_adjust_stock(request.user):
         messages.warning(request, "Você não tem permissão para fazer conferência de estoque.")
         return redirect("products:stock_dashboard")
 
-    company = get_user_company(request.user)
+    company = request.current_company
 
     products = (
         Product.objects
