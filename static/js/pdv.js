@@ -5,6 +5,9 @@ const cartToggleButton = document.getElementById("cart-toggle-button");
 const cartSummaryCount = document.getElementById("cart-summary-count");
 const cartSummaryTotal = document.getElementById("cart-summary-total");
 const clearCartButton = document.getElementById("clear-cart-button");
+const cartForm = document.getElementById("cart-form");
+const cartSubmitButton = document.getElementById("cart-submit-button");
+let cartSubmissionInProgress = false;
 
 function formatMoney(value) {
     return value.toLocaleString("pt-BR", {
@@ -135,5 +138,17 @@ function toggleMobileCart() {
 
 cartToggleButton.addEventListener("click", toggleMobileCart);
 clearCartButton.addEventListener("click", clearCart);
+cartForm.addEventListener("submit", (event) => {
+    prepareCartData();
+
+    if (cartSubmissionInProgress) {
+        event.preventDefault();
+        return;
+    }
+
+    cartSubmissionInProgress = true;
+    cartSubmitButton.disabled = true;
+    cartSubmitButton.innerText = "Enviando...";
+});
 
 renderCart();
