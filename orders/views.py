@@ -120,11 +120,7 @@ def pdv_view(request):
                 )
 
         messages.success(request, f"Pedido #{order.id} enviado como pré-venda.")
-
-        if can_view_orders_panel(request.user) or can_approve_order(request.user):
-            return redirect("orders:order_detail", order_id=order.id)
-
-        return redirect("orders:pdv")
+        return redirect("orders:order_detail", order_id=order.id)
 
     products = (
         Product.objects
@@ -249,6 +245,8 @@ def order_detail(request, order_id):
         "orders/order_detail.html",
         {
             "order": order,
+            "can_access_pdv": can_access_pdv(request.user),
+            "can_view_orders_panel": can_view_orders_panel(request.user),
             "can_approve_order": can_approve_order(request.user),
             "can_mark_delivered": can_mark_delivered(request.user),
             "can_cancel_pre_sale": can_cancel_pre_sale(request.user),

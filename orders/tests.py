@@ -332,3 +332,258 @@ class OrderTenantIsolationTests(TestCase):
             )
 
         self.assert_order_unchanged(self.order_a, "pre_sale")
+
+
+class OrderQuickFlowPermissionTests(TestCase):
+    def setUp(self):
+        self.company = Company.objects.create(name="Bar Fluxo Rápido")
+        self.unit = Unit.objects.create(
+            company=self.company,
+            name="Unidade",
+            symbol="un",
+        )
+        self.product = Product.objects.create(
+            company=self.company,
+            name="Cerveja",
+            unit=self.unit,
+            sale_price=Decimal("12.00"),
+        )
+        StockEntry.objects.create(
+            company=self.company,
+            product=self.product,
+            total_cost=Decimal("50.00"),
+            quantity_added=Decimal("50.00"),
+        )
+
+    def create_user(self, username, **permissions):
+        user = User.objects.create_user(
+            username=username,
+            password="senha-segura",
+        )
+        profile = Profile.objects.create(
+            user=user,
+            company=self.company,
+            role="waiter",
+        )
+
+        for permission_name, value in permissions.items():
+            setattr(profile, permission_name, value)
+
+        if permissions:
+            profile.save(update_fields=list(permissions))
+
+        return user
+
+    def create_order(self, user):
+        order = Order.objects.create(
+            company=self.company,
+            table_or_tab="Mesa 08",
+            created_by=user,
+        )
+        OrderItem.objects.create(
+            order=order,
+            company=self.company,
+            product=self.product,
+            quantity=Decimal("2.00"),
+        )
+        return order
+
+    def test_creator_without_approval_or_panel_is_redirected_to_detail(self):
+        user = self.create_user("garcom")
+        self.client.force_login(user)
+
+        response = self.client.post(
+            reverse("orders:pdv"),
+            {
+                "table_or_tab": "Mesa 08",
+                "cart_data": json.dumps(
+                    [{"id": self.product.pk, "quantity": 2}]
+                ),
+            },
+        )
+
+        order = Order.objects.get(created_by=user)
+        detail_url = reverse("orders:order_detail", args=[order.pk])
+
+        self.assertRedirects(response, detail_url)
+
+        detail_response = self.client.get(detail_url)
+        self.assertContains(detail_response, f"Pedido #{order.pk}")
+        self.assertContains(detail_response, "Cerveja")
+        self.assertContains(detail_response, "Voltar ao PDV")
+        self.assertNotContains(detail_response, "Confirmar Pix")
+        self.assertNotContains(
+            detail_response,
+            reverse("orders:approve_order", args=[order.pk, "pix"]),
+        )
+        self.assertNotContains(
+            detail_response,
+            reverse("orders:cancel_order", args=[order.pk]),
+        )
+
+    def test_direct_approval_without_permission_does_not_create_sale(self):
+        user = self.create_user("garcom_sem_aprovacao")
+        order = self.create_order(user)
+        self.client.force_login(user)
+
+        response = self.client.post(
+            reverse("orders:approve_order", args=[order.pk, "pix"])
+        )
+
+        self.assertRedirects(
+            response,
+            reverse("orders:order_detail", args=[order.pk]),
+        )
+        order.refresh_from_db()
+        self.assertEqual(order.status, "pre_sale")
+        self.assertIsNone(order.sale)
+        self.assertFalse(Sale.objects.exists())
+        self.assertFalse(StockMovement.objects.exists())
+
+    def test_approver_sees_payment_and_stays_on_detail_after_approval(self):
+        user = self.create_user("caixa", can_approve_order=True)
+        order = self.create_order(user)
+        detail_url = reverse("orders:order_detail", args=[order.pk])
+        self.client.force_login(user)
+
+        detail_response = self.client.get(detail_url)
+        self.assertContains(detail_response, "Confirmar Pix")
+        self.assertContains(
+            detail_response,
+            reverse("orders:approve_order", args=[order.pk, "pix"]),
+        )
+
+        approval_response = self.client.post(
+            reverse("orders:approve_order", args=[order.pk, "pix"])
+        )
+
+        self.assertRedirects(approval_response, detail_url)
+        order.refresh_from_db()
+        self.assertEqual(order.status, "sold")
+        self.assertIsNotNone(order.sale)
+
+        sold_response = self.client.get(detail_url)
+        self.assertContains(sold_response, "Voltar ao PDV")
+        self.assertNotContains(sold_response, "Marcar como entregue")
+        self.assertNotContains(
+            sold_response,
+            reverse(
+                "orders:cancel_paid_order_with_stock_return",
+                args=[order.pk],
+            ),
+        )
+        self.assertNotContains(
+            sold_response,
+            reverse("orders:discard_paid_order", args=[order.pk]),
+        )
+
+    def test_delivery_action_and_direct_post_respect_permission(self):
+        user = self.create_user("entregador")
+        order = self.create_order(user)
+        order.approve(payment_method="pix", user=user)
+        detail_url = reverse("orders:order_detail", args=[order.pk])
+        delivery_url = reverse("orders:mark_order_delivered", args=[order.pk])
+        self.client.force_login(user)
+
+        detail_response = self.client.get(detail_url)
+        self.assertNotContains(detail_response, "Marcar como entregue")
+        self.assertNotContains(detail_response, delivery_url)
+
+        blocked_response = self.client.post(delivery_url)
+        self.assertRedirects(blocked_response, detail_url)
+        order.refresh_from_db()
+        self.assertEqual(order.status, "sold")
+
+        profile = user.profile
+        profile.can_mark_delivered = True
+        profile.save(update_fields=["can_mark_delivered"])
+
+        allowed_detail_response = self.client.get(detail_url)
+        self.assertContains(allowed_detail_response, "Marcar como entregue")
+        self.assertContains(allowed_detail_response, delivery_url)
+
+        delivered_response = self.client.post(delivery_url)
+        self.assertRedirects(delivered_response, detail_url)
+        order.refresh_from_db()
+        self.assertEqual(order.status, "delivered")
+
+        final_detail_response = self.client.get(detail_url)
+        self.assertContains(final_detail_response, "Voltar ao PDV")
+        self.assertNotContains(final_detail_response, "Marcar como entregue")
+
+    def test_orders_panel_navigation_requires_permission(self):
+        user = self.create_user("operador")
+        order = self.create_order(user)
+        detail_url = reverse("orders:order_detail", args=[order.pk])
+        self.client.force_login(user)
+
+        response_without_permission = self.client.get(detail_url)
+        self.assertNotContains(
+            response_without_permission,
+            "Ir para pedidos em espera",
+        )
+
+        profile = user.profile
+        profile.can_view_orders_panel = True
+        profile.save(update_fields=["can_view_orders_panel"])
+
+        response_with_permission = self.client.get(detail_url)
+        self.assertContains(
+            response_with_permission,
+            "Ir para pedidos em espera",
+        )
+        self.assertContains(
+            response_with_permission,
+            reverse("orders:orders_panel"),
+        )
+
+    def test_navigation_hides_pdv_without_access_permission(self):
+        user = self.create_user(
+            "cozinha",
+            can_access_pdv=False,
+            can_view_orders_panel=True,
+        )
+        order = self.create_order(user)
+        self.client.force_login(user)
+
+        response = self.client.get(
+            reverse("orders:order_detail", args=[order.pk])
+        )
+
+        self.assertNotContains(response, "Voltar ao PDV")
+        self.assertContains(response, "Ir para pedidos em espera")
+
+    def test_pdv_renders_validation_messages(self):
+        user = self.create_user("garcom_com_erro")
+        self.client.force_login(user)
+
+        response = self.client.post(
+            reverse("orders:pdv"),
+            {"table_or_tab": "Mesa vazia", "cart_data": "[]"},
+            follow=True,
+        )
+
+        self.assertContains(
+            response,
+            "Adicione pelo menos um item ao pedido.",
+        )
+
+    def test_repeated_approval_does_not_duplicate_sale(self):
+        user = self.create_user("caixa_idempotente", can_approve_order=True)
+        order = self.create_order(user)
+        approval_url = reverse(
+            "orders:approve_order",
+            args=[order.pk, "pix"],
+        )
+        self.client.force_login(user)
+
+        first_response = self.client.post(approval_url)
+        second_response = self.client.post(approval_url)
+
+        detail_url = reverse("orders:order_detail", args=[order.pk])
+        self.assertRedirects(first_response, detail_url)
+        self.assertRedirects(second_response, detail_url)
+        order.refresh_from_db()
+        self.assertEqual(order.status, "sold")
+        self.assertEqual(Sale.objects.count(), 1)
+        self.assertEqual(StockMovement.objects.count(), 1)
