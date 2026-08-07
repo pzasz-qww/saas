@@ -188,14 +188,20 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
 
 STATIC_URL = '/static/'
-STATIC_ROOT = BASE_DIR / "staticfiles"
+STATIC_ROOT = Path(os.getenv("STATIC_ROOT", BASE_DIR / "staticfiles"))
+
+staticfiles_backend = (
+    "whitenoise.storage.CompressedManifestStaticFilesStorage"
+    if IS_PRODUCTION
+    else "django.contrib.staticfiles.storage.StaticFilesStorage"
+)
 
 STORAGES = {
     "default": {
         "BACKEND": "django.core.files.storage.FileSystemStorage",
     },
     "staticfiles": {
-        "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
+        "BACKEND": staticfiles_backend,
     },
 }
 # Diretório de arquivos estáticos em desenvolvimento

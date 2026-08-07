@@ -1,6 +1,9 @@
+"""Testes de isolamento e permissões portados integralmente da render."""
+
 import json
 from decimal import Decimal
 
+from django.contrib.messages import get_messages
 from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError
 from django.test import TestCase
@@ -256,7 +259,17 @@ class OrderTenantIsolationTests(TestCase):
             },
         )
 
-        self.assertEqual(response.status_code, 404)
+        self.assertRedirects(
+            response,
+            reverse("orders:pdv"),
+            fetch_redirect_response=False,
+        )
+        message_text = "\n".join(
+            str(message) for message in get_messages(response.wsgi_request)
+        )
+        self.assertIn("Confira os itens do carrinho", message_text)
+        self.assertNotIn(self.product_b.name, message_text)
+        self.assertNotIn(self.company_b.name, message_text)
         self.assertEqual(
             Order.objects.filter(company=self.company_a).count(),
             initial_orders,

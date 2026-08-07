@@ -4,7 +4,18 @@ from xml.sax.saxutils import escape
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
-from django.db.models import DecimalField, Q, Sum, Value
+from django.core.exceptions import ValidationError
+from django.db import transaction
+from django.db.models import (
+    Case,
+    DecimalField,
+    ExpressionWrapper,
+    F,
+    Q,
+    Sum,
+    Value,
+    When,
+)
 from django.db.models.functions import Coalesce
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
@@ -23,7 +34,14 @@ from accounts.permissions import (
     company_required,
 )
 
+from .category_names import clean_category_name
+from .category_services import resolve_category
 from .models import Product, StockEntry, StockMovement, Unit
+from .services import (
+    StockServiceError,
+    apply_negative_adjustment,
+    apply_positive_adjustment,
+)
 
 
 def parse_decimal(value):
@@ -41,23 +59,76 @@ def parse_decimal(value):
         return None
 
 
-def stock_report_products_for_company(company):
+def _get_stock_products_queryset(company):
+    current_stock_field = DecimalField(max_digits=12, decimal_places=2)
+    average_cost_field = DecimalField(max_digits=14, decimal_places=4)
+    stock_cost_expression = ExpressionWrapper(
+        F("stock_entries__remaining_quantity")
+        * F("stock_entries__total_cost")
+        / F("stock_entries__quantity_added"),
+        output_field=average_cost_field,
+    )
+
     return (
         Product.objects
         .filter(company=company, active=True)
-        .select_related("unit")
+        .select_related("category", "company", "unit")
         .annotate(
+            annotated_current_stock=Coalesce(
+                Sum(
+                    "stock_entries__remaining_quantity",
+                    filter=Q(stock_entries__company=company),
+                ),
+                Value(Decimal("0.00")),
+                output_field=current_stock_field,
+            ),
             report_current_stock=Coalesce(
                 Sum(
                     "stock_entries__remaining_quantity",
                     filter=Q(stock_entries__company=company),
                 ),
                 Value(Decimal("0.00")),
-                output_field=DecimalField(max_digits=12, decimal_places=2),
-            )
+                output_field=current_stock_field,
+            ),
+            annotated_average_cost_quantity=Coalesce(
+                Sum(
+                    Case(
+                        When(
+                            stock_entries__company=company,
+                            stock_entries__remaining_quantity__gt=0,
+                            then=F("stock_entries__remaining_quantity"),
+                        ),
+                        default=Value(Decimal("0.00")),
+                        output_field=current_stock_field,
+                    )
+                ),
+                Value(Decimal("0.00")),
+                output_field=current_stock_field,
+            ),
+            annotated_average_cost_total=Coalesce(
+                Sum(
+                    Case(
+                        When(
+                            stock_entries__company=company,
+                            stock_entries__remaining_quantity__gt=0,
+                            stock_entries__quantity_added__gt=0,
+                            then=stock_cost_expression,
+                        ),
+                        default=Value(Decimal("0.00")),
+                        output_field=average_cost_field,
+                    )
+                ),
+                Value(Decimal("0.00")),
+                output_field=average_cost_field,
+            ),
         )
-        .order_by("category", "name")
+        .order_by("category__name", "name")
     )
+
+
+def stock_report_products_for_company(company):
+    """Return the tenant-scoped queryset shared by stock reports."""
+    return _get_stock_products_queryset(company)
 
 
 @login_required
@@ -68,13 +139,7 @@ def stock_dashboard(request):
         return redirect("orders:pdv")
 
     company = request.current_company
-
-    products = (
-        Product.objects
-        .filter(company=company, active=True)
-        .select_related("company", "unit")
-        .order_by("category", "name")
-    )
+    products = stock_report_products_for_company(company)
 
     return render(
         request,
@@ -90,14 +155,105 @@ def stock_dashboard(request):
 @login_required
 @company_required
 @require_GET
-def stock_report_pdf(request):
+def shopping_list(request):
     if not can_view_stock(request.user):
         messages.warning(request, "Você não tem permissão para ver o estoque.")
         return redirect("orders:pdv")
 
     company = request.current_company
 
-    products = stock_report_products_for_company(company)
+    status_filters = [
+        {"key": "buy", "label": "Comprar"},
+        {"key": "empty", "label": "Esgotado"},
+        {"key": "critical", "label": Product.STOCK_STATUS_LABELS["critical"]},
+        {"key": "low", "label": Product.STOCK_STATUS_LABELS["low"]},
+        {"key": "ok", "label": Product.STOCK_STATUS_LABELS["ok"]},
+    ]
+    valid_statuses = {status_filter["key"] for status_filter in status_filters}
+    selected_status = request.GET.get("status", "buy")
+
+    if selected_status not in valid_statuses:
+        selected_status = "buy"
+
+    buying_statuses = {"empty", "critical", "low"}
+    counts = {status_filter["key"]: 0 for status_filter in status_filters}
+    rows = []
+
+    for product in _get_stock_products_queryset(company):
+        current_stock = product.current_stock
+        recommended_stock = product.minimum_quantity or Decimal("0.00")
+        status = product.stock_status
+        suggested_quantity = recommended_stock - current_stock
+
+        if suggested_quantity < 0:
+            suggested_quantity = Decimal("0.00")
+
+        row = {
+            "product": product,
+            "category": (
+                product.category.name
+                if product.category_id
+                else "Sem categoria"
+            ),
+            "current_stock": current_stock,
+            "recommended_stock": recommended_stock,
+            "recommended_defined": recommended_stock > 0,
+            "status": status,
+            "status_label": product.stock_status_label,
+            "suggested_quantity": suggested_quantity,
+            "unit": product.unit,
+        }
+
+        counts[status] += 1
+
+        if status in buying_statuses:
+            counts["buy"] += 1
+
+        if selected_status == "buy" and status in buying_statuses:
+            rows.append(row)
+        elif selected_status == status:
+            rows.append(row)
+
+    filter_options = []
+
+    for status_filter in status_filters:
+        filter_options.append({
+            "key": status_filter["key"],
+            "label": status_filter["label"],
+            "count": counts[status_filter["key"]],
+            "active": status_filter["key"] == selected_status,
+        })
+
+    selected_filter_label = next(
+        status_filter["label"]
+        for status_filter in status_filters
+        if status_filter["key"] == selected_status
+    )
+
+    return render(
+        request,
+        "products/shopping_list.html",
+        {
+            "company": company,
+            "emitted_at": timezone.localtime(),
+            "filter_options": filter_options,
+            "rows": rows,
+            "selected_filter_label": selected_filter_label,
+            "selected_status": selected_status,
+        },
+    )
+
+
+@login_required
+@company_required
+@require_GET
+def stock_report_pdf(request):
+    if not can_view_stock(request.user):
+        messages.warning(request, "Você não tem permissão para ver o estoque.")
+        return redirect("orders:pdv")
+
+    company = request.current_company
+    products = _get_stock_products_queryset(company)
 
     emitted_at = timezone.localtime()
     filename = f"estoque_geral_{emitted_at:%Y%m%d_%H%M}.pdf"
@@ -156,22 +312,19 @@ def stock_report_pdf(request):
         "Categoria",
         "Unidade",
         "Estoque atual",
-        "Estoque mínimo",
+        "Estoque recomendado",
         "Status",
         "Preço de venda",
     ]]
 
     for product in products:
-        current_stock = product.report_current_stock
+        current_stock = product.current_stock
+        status = Product.get_stock_status_label(
+            current_stock,
+            product.minimum_quantity,
+        )
 
-        if current_stock <= 0:
-            status = "Esgotado"
-        elif current_stock <= product.minimum_quantity:
-            status = "Baixo"
-        else:
-            status = "Disponível"
-
-        minimum_stock = (
+        recommended_stock = (
             f"{product.minimum_quantity:.2f}".replace(".", ",")
             if product.minimum_quantity > 0
             else "-"
@@ -179,17 +332,24 @@ def stock_report_pdf(request):
 
         table_data.append([
             Paragraph(escape(product.name), cell_style),
-            Paragraph(escape(product.category or "Sem categoria"), cell_style),
+            Paragraph(
+                escape(
+                    product.category.name
+                    if product.category_id
+                    else "Sem categoria"
+                ),
+                cell_style,
+            ),
             escape(product.unit.symbol),
             f"{current_stock:.2f}".replace(".", ","),
-            minimum_stock,
+            recommended_stock,
             status,
             f"R$ {product.sale_price:.2f}".replace(".", ","),
         ])
 
     table = Table(
         table_data,
-        colWidths=[58 * mm, 38 * mm, 24 * mm, 30 * mm, 30 * mm, 29 * mm, 34 * mm],
+        colWidths=[55 * mm, 36 * mm, 22 * mm, 30 * mm, 38 * mm, 28 * mm, 34 * mm],
         repeatRows=1,
         hAlign="LEFT",
     )
@@ -245,7 +405,7 @@ def product_create(request):
 
     if request.method == "POST":
         name = request.POST.get("name", "").strip()
-        category = request.POST.get("category", "").strip()
+        category_text = clean_category_name(request.POST.get("category", ""))
         product_type = request.POST.get("product_type", "sale")
         unit_id = request.POST.get("unit")
         sale_price = parse_decimal(request.POST.get("sale_price"))
@@ -254,6 +414,15 @@ def product_create(request):
 
         if not name:
             messages.warning(request, "Informe o nome do produto.")
+            return redirect("products:product_create")
+
+        valid_product_types = {value for value, _label in Product.PRODUCT_TYPES}
+        if product_type not in valid_product_types:
+            messages.warning(request, "Os dados informados para o produto são inválidos.")
+            return redirect("products:product_create")
+
+        if "category_id" in request.POST:
+            messages.warning(request, "Os dados informados para o produto são inválidos.")
             return redirect("products:product_create")
 
         if sale_price is None or sale_price < 0:
@@ -265,16 +434,26 @@ def product_create(request):
 
         unit = get_object_or_404(Unit, id=unit_id, company=company)
 
-        Product.objects.create(
-            company=company,
-            name=name,
-            category=category,
-            product_type=product_type,
-            unit=unit,
-            sale_price=sale_price,
-            minimum_quantity=minimum_quantity,
-            active=active,
-        )
+        try:
+            with transaction.atomic():
+                category = resolve_category(
+                    company=company,
+                    raw_name=category_text,
+                )
+                Product.objects.create(
+                    company=company,
+                    name=name,
+                    category=category,
+                    category_legacy=category_text or None,
+                    product_type=product_type,
+                    unit=unit,
+                    sale_price=sale_price,
+                    minimum_quantity=minimum_quantity,
+                    active=active,
+                )
+        except ValidationError:
+            messages.warning(request, "Os dados informados para o produto são inválidos.")
+            return redirect("products:product_create")
 
         messages.success(request, f"Produto cadastrado: {name}.")
         return redirect("products:stock_dashboard")
@@ -301,8 +480,8 @@ def stock_entry_create(request):
     products = (
         Product.objects
         .filter(company=company, active=True)
-        .select_related("unit")
-        .order_by("category", "name")
+        .select_related("category", "unit")
+        .order_by("category__name", "name")
     )
 
     if request.method == "POST":
@@ -384,8 +563,8 @@ def stock_count_adjust(request):
     products = (
         Product.objects
         .filter(company=company, active=True)
-        .select_related("unit")
-        .order_by("category", "name")
+        .select_related("category", "unit")
+        .order_by("category__name", "name")
     )
 
     if request.method == "POST":
@@ -432,17 +611,19 @@ def stock_count_adjust(request):
             return redirect("products:stock_dashboard")
 
         if difference > 0:
-            StockMovement.objects.create(
-                company=company,
-                product=product,
-                movement_type="adjustment_positive",
-                quantity=difference,
-                sale_value=Decimal("0.00"),
-                cost_value=difference * product.average_cost,
-                reason="Ajuste positivo por conferência",
-                notes=notes,
-                created_by=request.user,
-            )
+            try:
+                apply_positive_adjustment(
+                    company=company,
+                    product=product,
+                    quantity=difference,
+                    cost_value=difference * product.average_cost,
+                    reason="Ajuste positivo por conferência",
+                    notes=notes,
+                    created_by=request.user,
+                )
+            except StockServiceError as error:
+                messages.warning(request, str(error))
+                return redirect("products:stock_count_adjust")
 
             messages.success(
                 request,
@@ -452,38 +633,19 @@ def stock_count_adjust(request):
             return redirect("products:stock_dashboard")
 
         quantity_to_remove = abs(difference)
-        remaining_to_remove = quantity_to_remove
 
-        entries = (
-            StockEntry.objects
-            .filter(
+        try:
+            apply_negative_adjustment(
                 company=company,
                 product=product,
-                remaining_quantity__gt=0,
-            )
-            .order_by("created_at")
-        )
-
-        for entry in entries:
-            if remaining_to_remove <= 0:
-                break
-
-            quantity_from_entry = min(entry.remaining_quantity, remaining_to_remove)
-
-            StockMovement.objects.create(
-                company=company,
-                product=product,
-                stock_entry=entry,
-                movement_type="adjustment_negative",
-                quantity=quantity_from_entry,
-                sale_value=Decimal("0.00"),
-                cost_value=quantity_from_entry * entry.unit_cost,
+                quantity=quantity_to_remove,
                 reason="Ajuste negativo por conferência",
                 notes=notes,
                 created_by=request.user,
             )
-
-            remaining_to_remove -= quantity_from_entry
+        except StockServiceError as error:
+            messages.warning(request, str(error))
+            return redirect("products:stock_count_adjust")
 
         messages.warning(
             request,

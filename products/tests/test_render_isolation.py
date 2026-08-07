@@ -1,3 +1,5 @@
+"""Testes de isolamento de produtos portados integralmente da render."""
+
 from decimal import Decimal
 
 from django.contrib.auth.models import User
