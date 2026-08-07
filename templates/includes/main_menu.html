@@ -55,10 +55,6 @@
 
     <div id="mainDropdownMenu" class="dropdown-menu">
         {% if menu_permissions.is_authenticated and menu_permissions.has_company and menu_permissions.company_is_active %}
-            {% if menu_permissions.can_adjust_stock %}
-                <a href="{% url 'products:stock_count_adjust' %}">Conferência de estoque</a>
-            {% endif %}
-
             {% if menu_permissions.can_access_pdv %}
                 <a href="{% url 'orders:pdv' %}">PDV</a>
             {% endif %}
@@ -69,11 +65,6 @@
 
             {% if menu_permissions.can_view_stock %}
                 <a href="{% url 'products:stock_dashboard' %}">Estoque</a>
-            {% endif %}
-
-            {% if menu_permissions.can_create_stock_entry %}
-                <a href="{% url 'products:stock_entry_create' %}">Nova entrada de estoque</a>
-                <a href="{% url 'products:product_create' %}">Novo produto</a>
             {% endif %}
 
             {% if menu_permissions.can_manage_users %}

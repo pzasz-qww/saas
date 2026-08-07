@@ -17,6 +17,14 @@
     {% endif %}
 
     <div class="stock-entry-card">
+        {% if menu_permissions.can_view_stock %}
+            <nav class="module-return" aria-label="Navegação do estoque">
+                <a href="{% url 'products:stock_dashboard' %}" class="module-back-link">
+                    Voltar para o estoque
+                </a>
+            </nav>
+        {% endif %}
+
         <h1>Nova entrada de estoque</h1>
         <p class="subtitle">
             Busque o produto, selecione e lance a compra ou reposição.

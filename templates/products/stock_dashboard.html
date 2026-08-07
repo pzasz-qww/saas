@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% load static %}
 
-{% block title %}Estoque Geral{% endblock %}
+{% block title %}Central de Estoque{% endblock %}
 
 {% block extra_css %}
     <link rel="stylesheet" href="{% static 'css/stock_dashboard.css' %}">
@@ -17,30 +17,68 @@
             </div>
         {% endif %}
 
-        <h1>Estoque Geral</h1>
+        <h1>Central de Estoque</h1>
         <p class="subtitle">
             Busque, filtre por categoria e acompanhe custo, lucro e status dos produtos.
         </p>
 
-        <div class="actions-top">
+        <section class="stock-quick-actions" aria-labelledby="stock-quick-actions-title">
+            <div class="stock-quick-actions-heading">
+                <h2 id="stock-quick-actions-title">Ações rápidas</h2>
+                <p>Acesse as operações disponíveis para o seu perfil.</p>
+            </div>
+
+            <div class="stock-quick-actions-grid">
             {% if can_create_stock_entry %}
-                <a href="/produtos/novo/" class="action-link">
-                    + Novo produto
+                <a
+                    href="{% url 'products:stock_entry_create' %}"
+                    class="stock-quick-action"
+                    data-stock-action="entry"
+                >
+                    <strong>Registrar entrada</strong>
+                    <span>Compras e reposições</span>
                 </a>
 
-                <a href="/estoque/entrada/" class="action-link secondary">
-                    + Nova entrada de estoque
+                <a
+                    href="{% url 'products:product_create' %}"
+                    class="stock-quick-action"
+                    data-stock-action="product"
+                >
+                    <strong>Novo produto</strong>
+                    <span>Cadastrar um item</span>
                 </a>
             {% endif %}
 
-            <a href="{% url 'products:stock_report_pdf' %}" class="action-link">
-                Baixar PDF do estoque
+            {% if can_adjust_stock %}
+                <a
+                    href="{% url 'products:stock_count_adjust' %}"
+                    class="stock-quick-action"
+                    data-stock-action="count"
+                >
+                    <strong>Fazer conferência</strong>
+                    <span>Registrar a contagem real</span>
+                </a>
+            {% endif %}
+
+            <a
+                href="{% url 'products:shopping_list' %}"
+                class="stock-quick-action"
+                data-stock-action="shopping"
+            >
+                <strong>Lista de compras</strong>
+                <span>Planejar reposições</span>
             </a>
 
-            <a href="{% url 'products:shopping_list' %}" class="action-link secondary">
-                Lista de compras
+            <a
+                href="{% url 'products:stock_report_pdf' %}"
+                class="stock-quick-action"
+                data-stock-action="pdf"
+            >
+                <strong>Gerar PDF do estoque</strong>
+                <span>Exportar a visão atual</span>
             </a>
-        </div>
+            </div>
+        </section>
 
         <div class="filters-card">
             <input
