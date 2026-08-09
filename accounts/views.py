@@ -1,9 +1,22 @@
 from django.contrib import messages
 from django.contrib.auth import authenticate, login, logout
+from django.contrib.auth.decorators import login_required
 from django.contrib.auth.models import User
+from django.db import IntegrityError, transaction
+from django.middleware.csrf import rotate_token
 from django.shortcuts import get_object_or_404, redirect, render
+from django.views.decorators.http import require_GET, require_POST
 
-from accounts.permissions import can_manage_users, get_user_company
+from accounts.permissions import (
+    SUPPORT_COMPANY_SESSION_KEY,
+    can_manage_users,
+    clear_support_operational_session,
+    company_required,
+    get_current_company,
+    support_user_required,
+)
+from companies.models import Company
+
 from .models import PERMISSION_FIELDS, Profile
 
 
@@ -80,19 +93,63 @@ def logout_view(request):
     return redirect("accounts:login")
 
 
-def people_management(request):
-    if not request.user.is_authenticated:
-        return redirect("accounts:login")
+@login_required
+@support_user_required
+@require_GET
+def support_companies(request):
+    return render(
+        request,
+        "accounts/support_companies.html",
+        {
+            "companies": Company.objects.all().order_by("name"),
+            "selected_company": get_current_company(request),
+        },
+    )
 
+
+@login_required
+@support_user_required
+@require_POST
+def select_support_company(request, company_id):
+    company = get_object_or_404(
+        Company,
+        pk=company_id,
+        active=True,
+    )
+
+    clear_support_operational_session(request)
+    request.session[SUPPORT_COMPANY_SESSION_KEY] = company.pk
+    request.session.cycle_key()
+    rotate_token(request)
+
+    messages.success(
+        request,
+        f"Modo suporte ativado para {company.name}.",
+    )
+    return redirect("orders:pdv")
+
+
+@login_required
+@support_user_required
+@require_POST
+def clear_support_company(request):
+    clear_support_operational_session(request)
+    request.session.pop(SUPPORT_COMPANY_SESSION_KEY, None)
+    request.session.cycle_key()
+    rotate_token(request)
+
+    messages.success(request, "Empresa do modo suporte removida.")
+    return redirect("accounts:support_companies")
+
+
+@login_required
+@company_required
+def people_management(request):
     if not can_manage_users(request.user):
         messages.warning(request, "Você não tem permissão para gerenciar a equipe.")
         return redirect("orders:pdv")
 
-    company = get_user_company(request.user)
-
-    if company is None:
-        messages.warning(request, "Cadastre uma empresa antes de gerenciar a equipe.")
-        return redirect("/admin/companies/company/")
+    company = request.current_company
 
     if request.method == "POST":
         action = request.POST.get("action")
@@ -115,19 +172,27 @@ def people_management(request):
                 messages.warning(request, "Já existe um usuário com esse nome.")
                 return redirect("accounts:people_management")
 
-            user = User.objects.create_user(
-                username=username,
-                password=password,
-                first_name=first_name,
-            )
+            try:
+                with transaction.atomic():
+                    user = User.objects.create_user(
+                        username=username,
+                        password=password,
+                        first_name=first_name,
+                    )
 
-            profile = Profile(
-                user=user,
-                company=company,
-                role=role,
-            )
-            profile.apply_legacy_role_defaults()
-            profile.save()
+                    profile = Profile(
+                        user=user,
+                        company=company,
+                        role=role,
+                    )
+                    profile.apply_legacy_role_defaults()
+                    profile.save()
+            except IntegrityError:
+                messages.warning(
+                    request,
+                    "Não foi possível criar o membro da equipe. Verifique os dados e tente novamente.",
+                )
+                return redirect("accounts:people_management")
 
             messages.success(request, f"Membro da equipe criado: {username}.")
             return redirect("accounts:people_management")

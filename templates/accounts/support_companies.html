@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+
+{% block title %}Selecionar empresa · Modo suporte{% endblock %}
+
+{% block content %}
+    <section class="support-companies-page">
+        {% if messages %}
+            <div class="support-messages" role="status">
+                {% for message in messages %}
+                    <p>{{ message }}</p>
+                {% endfor %}
+            </div>
+        {% endif %}
+
+        <header class="support-companies-header">
+            <div>
+                <p class="support-kicker">Modo suporte</p>
+                <h1>Selecionar empresa</h1>
+                <p>
+                    A seleção vale somente para esta sessão e nunca altera o
+                    vínculo permanente de nenhum usuário.
+                </p>
+            </div>
+
+            {% if selected_company %}
+                <form method="post" action="{% url 'accounts:clear_support_company' %}">
+                    {% csrf_token %}
+                    <button class="support-button support-button--danger" type="submit">
+                        Limpar empresa selecionada
+                    </button>
+                </form>
+            {% endif %}
+        </header>
+
+        {% if selected_company %}
+            <div class="support-current-company" role="status">
+                <strong>Empresa atual:</strong> {{ selected_company.name }}
+                {% if selected_company.active %}
+                    <span class="support-status support-status--active">Ativa</span>
+                {% else %}
+                    <span class="support-status support-status--inactive">Inativa</span>
+                {% endif %}
+            </div>
+        {% else %}
+            <div class="support-current-company support-current-company--empty" role="alert">
+                <strong>Nenhuma empresa selecionada.</strong>
+                As operações permanecem bloqueadas.
+            </div>
+        {% endif %}
+
+        <div class="support-company-list">
+            {% for company in companies %}
+                <article class="support-company-card{% if selected_company and selected_company.pk == company.pk %} support-company-card--selected{% endif %}">
+                    <div>
+                        <h2>{{ company.name }}</h2>
+                        {% if company.active %}
+                            <span class="support-status support-status--active">Ativa</span>
+                        {% else %}
+                            <span class="support-status support-status--inactive">Inativa</span>
+                        {% endif %}
+
+                        {% if selected_company and selected_company.pk == company.pk %}
+                            <span class="support-status support-status--selected">Selecionada</span>
+                        {% endif %}
+                    </div>
+
+                    {% if company.active %}
+                        <form method="post" action="{% url 'accounts:select_support_company' company.pk %}">
+                            {% csrf_token %}
+                            <button class="support-button" type="submit">
+                                {% if selected_company and selected_company.pk == company.pk %}
+                                    Continuar administrando
+                                {% else %}
+                                    Administrar esta empresa
+                                {% endif %}
+                            </button>
+                        </form>
+                    {% else %}
+                        <button class="support-button" type="button" disabled>
+                            Empresa inativa
+                        </button>
+                    {% endif %}
+                </article>
+            {% empty %}
+                <p class="support-empty-list">Nenhuma empresa cadastrada.</p>
+            {% endfor %}
+        </div>
+    </section>
+{% endblock %}

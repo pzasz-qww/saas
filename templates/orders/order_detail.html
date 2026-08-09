@@ -8,8 +8,7 @@
 {% endblock %}
 
 {% block content %}
-    <div class="container">
-
+    <div class="order-container">
         {% if messages %}
             <div class="messages">
                 {% for message in messages %}
@@ -18,17 +17,237 @@
             </div>
         {% endif %}
 
-        <div class="card">
-            <div class="card-title-row">
-                <h2>Itens do pedido</h2>
+        <section class="order-card order-hero" aria-labelledby="order-title">
+            <div class="order-hero-heading">
+                <div>
+                    <p class="order-eyebrow">Resumo do pedido</p>
+                    <h1 id="order-title">Pedido #{{ order.id }}</h1>
+                    <p class="order-subtitle">
+                        Mesa/comanda: <strong>{{ order.table_or_tab|default:"-" }}</strong>
+                    </p>
+                </div>
 
-                <span class="card-title-meta">
+                <span class="order-status order-status--{{ order.status }}">
+                    {{ order.get_status_display }}
+                </span>
+            </div>
+
+            <div class="order-quick-summary">
+                <div class="order-summary-item order-summary-item--total">
+                    <span>Total</span>
+                    <strong>R$ {{ order.total_amount|floatformat:2 }}</strong>
+                </div>
+
+                <div class="order-summary-item">
+                    <span>Criado por</span>
+                    <strong>{{ order.created_by|default:"-" }}</strong>
+                </div>
+
+                {% if order.sale %}
+                    <div class="order-summary-item">
+                        <span>Pagamento</span>
+                        <strong>{{ order.sale.get_payment_method_display }}</strong>
+                    </div>
+                {% endif %}
+            </div>
+        </section>
+
+        <section class="order-card order-flow-card" aria-labelledby="next-action-title">
+            {% if order.status == "pre_sale" %}
+                {% if can_approve_order %}
+                    <div class="order-flow-heading">
+                        <p class="order-eyebrow">Próxima ação</p>
+                        <h2 id="next-action-title">Confirmar venda e pagamento</h2>
+                        <p>Escolha a forma de pagamento para concluir a venda.</p>
+                    </div>
+
+                    <div class="order-primary-actions order-payment-actions">
+                        <form method="post" action="{% url 'orders:approve_order' order.id 'pix' %}">
+                            {% csrf_token %}
+                            <button class="flow-button flow-button--pix" type="submit">Confirmar Pix</button>
+                        </form>
+
+                        <form method="post" action="{% url 'orders:approve_order' order.id 'cash' %}">
+                            {% csrf_token %}
+                            <button class="flow-button flow-button--cash" type="submit">Confirmar Dinheiro</button>
+                        </form>
+
+                        <form method="post" action="{% url 'orders:approve_order' order.id 'debit' %}">
+                            {% csrf_token %}
+                            <button class="flow-button flow-button--card" type="submit">Confirmar Débito</button>
+                        </form>
+
+                        <form method="post" action="{% url 'orders:approve_order' order.id 'credit' %}">
+                            {% csrf_token %}
+                            <button class="flow-button flow-button--card" type="submit">Confirmar Crédito</button>
+                        </form>
+                    </div>
+
+                    {% if can_access_pdv or can_view_orders_panel %}
+                        <nav class="order-navigation" aria-label="Continuar operação">
+                            {% if can_access_pdv %}
+                                <a class="flow-link flow-link--secondary" href="{% url 'orders:pdv' %}">Voltar ao PDV</a>
+                            {% endif %}
+                            {% if can_view_orders_panel %}
+                                <a class="flow-link flow-link--secondary" href="{% url 'orders:orders_panel' %}">Ir para pedidos em espera</a>
+                            {% endif %}
+                        </nav>
+                    {% endif %}
+                {% else %}
+                    <div class="order-flow-heading">
+                        <p class="order-eyebrow">Pré-venda registrada</p>
+                        <h2 id="next-action-title">Pedido aguardando pagamento</h2>
+                        <p>O resumo foi salvo. Continue pelo próximo caminho disponível.</p>
+                    </div>
+
+                    <nav class="order-navigation order-navigation--primary" aria-label="Continuar operação">
+                        {% if can_access_pdv %}
+                            <a class="flow-link flow-link--primary" href="{% url 'orders:pdv' %}">Voltar ao PDV</a>
+                        {% endif %}
+                        {% if can_view_orders_panel %}
+                            <a class="flow-link flow-link--secondary" href="{% url 'orders:orders_panel' %}">Ir para pedidos em espera</a>
+                        {% endif %}
+                    </nav>
+                {% endif %}
+
+            {% elif order.status == "sold" %}
+                {% if can_mark_delivered %}
+                    <div class="order-flow-heading">
+                        <p class="order-eyebrow">Pagamento confirmado</p>
+                        <h2 id="next-action-title">Pedido pronto para entrega</h2>
+                        <p>A venda foi registrada. Marque a entrega quando o pedido chegar ao cliente.</p>
+                    </div>
+
+                    <div class="order-primary-actions">
+                        <form method="post" action="{% url 'orders:mark_order_delivered' order.id %}">
+                            {% csrf_token %}
+                            <button class="flow-button flow-button--deliver" type="submit">Marcar como entregue</button>
+                        </form>
+                    </div>
+
+                    {% if can_access_pdv or can_view_orders_panel %}
+                        <nav class="order-navigation" aria-label="Continuar operação">
+                            {% if can_access_pdv %}
+                                <a class="flow-link flow-link--secondary" href="{% url 'orders:pdv' %}">Voltar ao PDV</a>
+                            {% endif %}
+                            {% if can_view_orders_panel %}
+                                <a class="flow-link flow-link--secondary" href="{% url 'orders:orders_panel' %}">Ir para pedidos em espera</a>
+                            {% endif %}
+                        </nav>
+                    {% endif %}
+                {% else %}
+                    <div class="order-flow-heading">
+                        <p class="order-eyebrow">Pagamento confirmado</p>
+                        <h2 id="next-action-title">Venda concluída</h2>
+                        <p>Você não possui ações de entrega para este pedido.</p>
+                    </div>
+
+                    <nav class="order-navigation order-navigation--primary" aria-label="Continuar operação">
+                        {% if can_access_pdv %}
+                            <a class="flow-link flow-link--primary" href="{% url 'orders:pdv' %}">Voltar ao PDV</a>
+                        {% endif %}
+                        {% if can_view_orders_panel %}
+                            <a class="flow-link flow-link--secondary" href="{% url 'orders:orders_panel' %}">Ir para pedidos em espera</a>
+                        {% endif %}
+                    </nav>
+                {% endif %}
+
+            {% elif order.status == "delivered" %}
+                <div class="order-flow-heading">
+                    <p class="order-eyebrow">Fluxo concluído</p>
+                    <h2 id="next-action-title">Pedido entregue</h2>
+                    <p>O pedido foi marcado como entregue.</p>
+                </div>
+
+                <nav class="order-navigation order-navigation--primary" aria-label="Continuar operação">
+                    {% if can_access_pdv %}
+                        <a class="flow-link flow-link--primary" href="{% url 'orders:pdv' %}">Voltar ao PDV</a>
+                    {% endif %}
+                    {% if can_view_orders_panel %}
+                        <a class="flow-link flow-link--secondary" href="{% url 'orders:orders_panel' %}">Ir para pedidos em espera</a>
+                    {% endif %}
+                </nav>
+
+            {% elif order.status == "cancelled" %}
+                <div class="order-flow-heading">
+                    <p class="order-eyebrow">Fluxo encerrado</p>
+                    <h2 id="next-action-title">Pedido cancelado</h2>
+                    <p>Este pedido não possui mais ações operacionais.</p>
+                </div>
+
+                <nav class="order-navigation order-navigation--primary" aria-label="Continuar operação">
+                    {% if can_access_pdv %}
+                        <a class="flow-link flow-link--primary" href="{% url 'orders:pdv' %}">Voltar ao PDV</a>
+                    {% endif %}
+                    {% if can_view_orders_panel %}
+                        <a class="flow-link flow-link--secondary" href="{% url 'orders:orders_panel' %}">Ir para pedidos em espera</a>
+                    {% endif %}
+                </nav>
+
+            {% elif order.status == "discarded" %}
+                <div class="order-flow-heading">
+                    <p class="order-eyebrow">Fluxo encerrado</p>
+                    <h2 id="next-action-title">Pedido descartado</h2>
+                    <p>Os itens deste pedido não retornaram ao estoque.</p>
+                </div>
+
+                <nav class="order-navigation order-navigation--primary" aria-label="Continuar operação">
+                    {% if can_access_pdv %}
+                        <a class="flow-link flow-link--primary" href="{% url 'orders:pdv' %}">Voltar ao PDV</a>
+                    {% endif %}
+                    {% if can_view_orders_panel %}
+                        <a class="flow-link flow-link--secondary" href="{% url 'orders:orders_panel' %}">Ir para pedidos em espera</a>
+                    {% endif %}
+                </nav>
+            {% endif %}
+        </section>
+
+        {% if order.status == "pre_sale" and can_cancel_pre_sale %}
+            <section class="order-card order-danger-zone" aria-labelledby="danger-title">
+                <div>
+                    <h2 id="danger-title">Cancelar pré-venda</h2>
+                    <p>Use somente se o pedido não deve seguir para pagamento.</p>
+                </div>
+                <form method="post" action="{% url 'orders:cancel_order' order.id %}">
+                    {% csrf_token %}
+                    <button class="danger-button" type="submit">Cancelar pré-venda</button>
+                </form>
+            </section>
+        {% elif order.status == "sold" %}
+            {% if can_cancel_paid_order or can_discard_paid_order %}
+                <section class="order-card order-danger-zone" aria-labelledby="danger-title">
+                    <div>
+                        <h2 id="danger-title">Ações excepcionais</h2>
+                        <p>Estas ações alteram uma venda já confirmada.</p>
+                    </div>
+                    <div class="order-danger-actions">
+                        {% if can_cancel_paid_order %}
+                            <form method="post" action="{% url 'orders:cancel_paid_order_with_stock_return' order.id %}">
+                                {% csrf_token %}
+                                <button class="danger-button" type="submit">Cancelar e devolver estoque</button>
+                            </form>
+                        {% endif %}
+                        {% if can_discard_paid_order %}
+                            <form method="post" action="{% url 'orders:discard_paid_order' order.id %}">
+                                {% csrf_token %}
+                                <button class="danger-button danger-button--dark" type="submit">Descartar sem devolver</button>
+                            </form>
+                        {% endif %}
+                    </div>
+                </section>
+            {% endif %}
+        {% endif %}
+
+        <section class="order-card" aria-labelledby="items-title">
+            <div class="order-card-title-row">
+                <h2 id="items-title">Itens do pedido</h2>
+                <span class="order-card-meta">
                     {{ order.created_by|default:"-" }} • {{ order.created_at }}
                 </span>
             </div>
 
             <div class="desktop-items-table">
-                <table>
+                <table class="order-items-table">
                     <thead>
                         <tr>
                             <th>Produto</th>
@@ -38,7 +257,6 @@
                             <th>Observação</th>
                         </tr>
                     </thead>
-
                     <tbody>
                         {% for item in order.items.all %}
                             <tr>
@@ -59,184 +277,68 @@
 
             <div class="mobile-items-list">
                 {% for item in order.items.all %}
-                    <div class="mobile-item-card">
-                        <div class="mobile-item-name">
-                            {{ item.product.name }}
-                        </div>
-
+                    <article class="mobile-item-card">
+                        <div class="mobile-item-name">{{ item.product.name }}</div>
                         <div class="mobile-item-row">
                             <span>Quantidade</span>
                             <strong>{{ item.quantity|floatformat:0 }}</strong>
                         </div>
-
                         <div class="mobile-item-row">
                             <span>Preço un.</span>
                             <strong>R$ {{ item.unit_price|floatformat:2 }}</strong>
                         </div>
-
                         <div class="mobile-item-row mobile-item-total">
                             <span>Total</span>
                             <strong>R$ {{ item.total_price|floatformat:2 }}</strong>
                         </div>
-
                         {% if item.notes %}
                             <div class="mobile-item-note">
                                 <span>Observação</span>
                                 <p>{{ item.notes }}</p>
                             </div>
                         {% endif %}
-                    </div>
+                    </article>
                 {% empty %}
-                    <div class="mobile-item-empty">
-                        Nenhum item no pedido.
-                    </div>
+                    <div class="mobile-item-empty">Nenhum item no pedido.</div>
                 {% endfor %}
             </div>
+        </section>
 
-            <div class="total">
-                Total: R$ {{ order.total_amount|floatformat:2 }}
-            </div>
-        </div>
-
-        <div class="card">
-            <h1>Pedido #{{ order.id }}</h1>
-
-            <p class="subtitle">
-                Mesa/comanda: {{ order.table_or_tab|default:"-" }}
-            </p>
-
-            <span class="status {{ order.status }}">
-                {{ order.get_status_display }}
-            </span>
-
-            <div class="grid">
-                <div class="info-box">
-                    <div class="label">Empresa</div>
-                    <div class="value">{{ order.company }}</div>
+        <section class="order-card" aria-labelledby="details-title">
+            <h2 id="details-title">Informações do pedido</h2>
+            <div class="order-info-grid">
+                <div class="order-info-box">
+                    <span>Empresa</span>
+                    <strong>{{ order.company }}</strong>
                 </div>
-
-                <div class="info-box">
-                    <div class="label">Total</div>
-                    <div class="value">R$ {{ order.total_amount|floatformat:2 }}</div>
+                <div class="order-info-box">
+                    <span>Criado em</span>
+                    <strong>{{ order.created_at }}</strong>
                 </div>
-
-                <div class="info-box">
-                    <div class="label">Criado por</div>
-                    <div class="value">{{ order.created_by|default:"-" }}</div>
+                <div class="order-info-box">
+                    <span>Aprovado por</span>
+                    <strong>{{ order.approved_by|default:"-" }}</strong>
                 </div>
-
-                <div class="info-box">
-                    <div class="label">Aprovado por</div>
-                    <div class="value">{{ order.approved_by|default:"-" }}</div>
+                <div class="order-info-box">
+                    <span>Aprovado em</span>
+                    <strong>{{ order.approved_at|default:"-" }}</strong>
                 </div>
-
-                <div class="info-box">
-                    <div class="label">Criado em</div>
-                    <div class="value">{{ order.created_at }}</div>
+                <div class="order-info-box">
+                    <span>Venda gerada</span>
+                    <strong>{% if order.sale %}Venda #{{ order.sale.id }}{% else %}-{% endif %}</strong>
                 </div>
-
-                <div class="info-box">
-                    <div class="label">Aprovado em</div>
-                    <div class="value">{{ order.approved_at|default:"-" }}</div>
-                </div>
-
-                <div class="info-box">
-                    <div class="label">Venda gerada</div>
-                    <div class="value">
-                        {% if order.sale %}
-                            Venda #{{ order.sale.id }}
-                        {% else %}
-                            -
-                        {% endif %}
-                    </div>
-                </div>
-
-                <div class="info-box">
-                    <div class="label">Entregue em</div>
-                    <div class="value">{{ order.delivered_at|default:"-" }}</div>
+                <div class="order-info-box">
+                    <span>Entregue em</span>
+                    <strong>{{ order.delivered_at|default:"-" }}</strong>
                 </div>
             </div>
-        </div>
-
-        <div class="card">
-            <h2>Ações</h2>
-
-            {% if order.status == "pre_sale" %}
-                <p class="muted">
-                    Este pedido ainda é uma pré-venda. Aprove após o pagamento.
-                </p>
-
-                <div class="actions">
-                    <form method="post" action="{% url 'orders:approve_order' order.id 'pix' %}">
-                        {% csrf_token %}
-                        <button class="btn-pix" type="submit">Aprovar Pix</button>
-                    </form>
-
-                    <form method="post" action="{% url 'orders:approve_order' order.id 'cash' %}">
-                        {% csrf_token %}
-                        <button class="btn-cash" type="submit">Aprovar Dinheiro</button>
-                    </form>
-
-                    <form method="post" action="{% url 'orders:approve_order' order.id 'debit' %}">
-                        {% csrf_token %}
-                        <button class="btn-card" type="submit">Aprovar Débito</button>
-                    </form>
-
-                    <form method="post" action="{% url 'orders:approve_order' order.id 'credit' %}">
-                        {% csrf_token %}
-                        <button class="btn-card" type="submit">Aprovar Crédito</button>
-                    </form>
-
-                    <form method="post" action="{% url 'orders:cancel_order' order.id %}">
-                        {% csrf_token %}
-                        <button class="btn-cancel" type="submit">Cancelar pré-venda</button>
-                    </form>
-                </div>
-
-            {% elif order.status == "sold" %}
-                <p class="muted">
-                    Este pedido já foi vendido. Agora ele pode ser entregue, cancelado com retorno ao estoque ou descartado sem retorno.
-                </p>
-
-                <div class="actions">
-                    <form method="post" action="{% url 'orders:mark_order_delivered' order.id %}">
-                        {% csrf_token %}
-                        <button class="btn-deliver" type="submit">Marcar como entregue</button>
-                    </form>
-
-                    <form method="post" action="{% url 'orders:cancel_paid_order_with_stock_return' order.id %}">
-                        {% csrf_token %}
-                        <button class="btn-cancel" type="submit">Cancelar e devolver estoque</button>
-                    </form>
-
-                    <form method="post" action="{% url 'orders:discard_paid_order' order.id %}">
-                        {% csrf_token %}
-                        <button class="btn-discard" type="submit">Descartar sem devolver</button>
-                    </form>
-                </div>
-
-            {% elif order.status == "delivered" %}
-                <p class="muted">
-                    Este pedido já foi entregue.
-                </p>
-
-            {% elif order.status == "cancelled" %}
-                <p class="muted">
-                    Este pedido foi cancelado. Se ele já tinha sido vendido, os itens foram retornados ao estoque.
-                </p>
-
-            {% elif order.status == "discarded" %}
-                <p class="muted">
-                    Este pedido foi descartado. Os itens não voltaram ao estoque.
-                </p>
-            {% endif %}
-        </div>
+        </section>
 
         {% if order.notes %}
-            <div class="card">
+            <section class="order-card">
                 <h2>Observações</h2>
                 <p>{{ order.notes }}</p>
-            </div>
+            </section>
         {% endif %}
     </div>
 {% endblock %}

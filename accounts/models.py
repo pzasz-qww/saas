@@ -1,5 +1,6 @@
 from django.db import models
 from django.contrib.auth.models import User
+from django.core.exceptions import ValidationError
 
 from companies.models import Company
 
@@ -215,7 +216,10 @@ class Profile(models.Model):
             setattr(self, permission_name, value)
 
     def apply_role_defaults(self):
-        if self.role_template:
+        if (
+            self.role_template
+            and self.role_template.company_id == self.company_id
+        ):
             self.role_template.apply_to_profile(self)
         else:
             self.apply_legacy_role_defaults()
@@ -223,13 +227,25 @@ class Profile(models.Model):
     def save(self, *args, **kwargs):
         is_new = self.pk is None
 
+        if (
+            self.role_template_id
+            and self.company_id
+            and self.role_template.company_id != self.company_id
+        ):
+            raise ValidationError(
+                "A função personalizada deve pertencer à mesma empresa do perfil."
+            )
+
         if is_new:
             self.apply_role_defaults()
 
         super().save(*args, **kwargs)
 
     def role_name(self):
-        if self.role_template:
+        if (
+            self.role_template
+            and self.role_template.company_id == self.company_id
+        ):
             return self.role_template.name
 
         return self.get_role_display()

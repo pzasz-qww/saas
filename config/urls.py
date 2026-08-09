@@ -1,6 +1,17 @@
 from django.contrib import admin
 from django.urls import include, path
 from django.views.generic import RedirectView
+
+
+def global_admin_has_permission(request):
+    return request.user.is_active and request.user.is_superuser
+
+
+admin.site.site_header = "Bar SaaS — Administração global (todas as empresas)"
+admin.site.site_title = "Administração global"
+admin.site.index_title = "Acesso restrito a superusuários"
+admin.site.has_permission = global_admin_has_permission
+
 urlpatterns = [
     path(
         "",

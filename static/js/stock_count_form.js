@@ -45,7 +45,7 @@ function filterProducts() {
 function selectProduct(card) {
     const selectedId = card.dataset.id;
     const selectedName = card.dataset.name;
-    const selectedCategory = card.dataset.category;
+    const selectedCategory = card.dataset.category || "Sem categoria";
 
     selectedStock = parseNumber(card.dataset.stock);
     selectedUnit = card.dataset.unit;
@@ -54,11 +54,13 @@ function selectProduct(card) {
 
     const selectedBox = document.getElementById("selected_product_box");
     selectedBox.style.display = "block";
-    selectedBox.innerHTML = `
-        Produto selecionado: ${selectedName}
-        <br>
-        <small>${selectedCategory} · Estoque esperado: ${selectedStock.toFixed(2)} ${selectedUnit}</small>
-    `;
+    const details = document.createElement("small");
+    details.textContent = `${selectedCategory} · Estoque esperado: ${selectedStock.toFixed(2)} ${selectedUnit}`;
+    selectedBox.replaceChildren(
+        document.createTextNode(`Produto selecionado: ${selectedName}`),
+        document.createElement("br"),
+        details,
+    );
 
     document.querySelectorAll(".product-card").forEach(item => {
         item.classList.remove("selected");
@@ -82,28 +84,29 @@ function calculateDifference() {
 
     differenceBox.style.display = "block";
 
+    const differenceValue = document.createElement("span");
+    let explanation = "";
+
     if (difference > 0) {
-        differenceBox.innerHTML = `
-            Diferença:
-            <span class="difference-positive">+${difference.toFixed(2)} ${selectedUnit}</span>
-            <br>
-            Será criado um ajuste positivo.
-        `;
+        differenceValue.className = "difference-positive";
+        differenceValue.textContent = `+${difference.toFixed(2)} ${selectedUnit}`;
+        explanation = "Será criado um ajuste positivo.";
     } else if (difference < 0) {
-        differenceBox.innerHTML = `
-            Diferença:
-            <span class="difference-negative">${difference.toFixed(2)} ${selectedUnit}</span>
-            <br>
-            Será criado um ajuste negativo.
-        `;
+        differenceValue.className = "difference-negative";
+        differenceValue.textContent = `${difference.toFixed(2)} ${selectedUnit}`;
+        explanation = "Será criado um ajuste negativo.";
     } else {
-        differenceBox.innerHTML = `
-            Diferença:
-            <span class="difference-zero">0.00 ${selectedUnit}</span>
-            <br>
-            A conferência será registrada sem alterar o estoque.
-        `;
+        differenceValue.className = "difference-zero";
+        differenceValue.textContent = `0.00 ${selectedUnit}`;
+        explanation = "A conferência será registrada sem alterar o estoque.";
     }
+
+    differenceBox.replaceChildren(
+        document.createTextNode("Diferença: "),
+        differenceValue,
+        document.createElement("br"),
+        document.createTextNode(explanation),
+    );
 }
 
 function validateForm() {

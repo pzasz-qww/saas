@@ -32,7 +32,7 @@ function filterProducts() {
 function selectProduct(card) {
     const selectedId = card.dataset.id;
     const selectedName = card.dataset.name;
-    const selectedCategory = card.dataset.category;
+    const selectedCategory = card.dataset.category || "Sem categoria";
     const selectedUnit = card.dataset.unit;
     const selectedPrice = card.dataset.price;
 
@@ -40,11 +40,13 @@ function selectProduct(card) {
 
     const selectedBox = document.getElementById("selected_product_box");
     selectedBox.style.display = "block";
-    selectedBox.innerHTML = `
-        Produto selecionado: ${selectedName}
-        <br>
-        <small>${selectedCategory} · ${selectedUnit} · Venda R$ ${selectedPrice}</small>
-    `;
+    const details = document.createElement("small");
+    details.textContent = `${selectedCategory} · ${selectedUnit} · Venda R$ ${selectedPrice}`;
+    selectedBox.replaceChildren(
+        document.createTextNode(`Produto selecionado: ${selectedName}`),
+        document.createElement("br"),
+        details,
+    );
 
     document.querySelectorAll(".product-card").forEach(item => {
         item.classList.remove("selected");

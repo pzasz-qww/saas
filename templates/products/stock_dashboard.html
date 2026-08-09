@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% load static %}
 
-{% block title %}Estoque Geral{% endblock %}
+{% block title %}Central de Estoque{% endblock %}
 
 {% block extra_css %}
     <link rel="stylesheet" href="{% static 'css/stock_dashboard.css' %}">
@@ -17,26 +17,68 @@
             </div>
         {% endif %}
 
-        <h1>Estoque Geral</h1>
+        <h1>Central de Estoque</h1>
         <p class="subtitle">
             Busque, filtre por categoria e acompanhe custo, lucro e status dos produtos.
         </p>
 
-        <div class="actions-top">
+        <section class="stock-quick-actions" aria-labelledby="stock-quick-actions-title">
+            <div class="stock-quick-actions-heading">
+                <h2 id="stock-quick-actions-title">Ações rápidas</h2>
+                <p>Acesse as operações disponíveis para o seu perfil.</p>
+            </div>
+
+            <div class="stock-quick-actions-grid">
             {% if can_create_stock_entry %}
-                <a href="/produtos/novo/" class="action-link">
-                    + Novo produto
+                <a
+                    href="{% url 'products:stock_entry_create' %}"
+                    class="stock-quick-action"
+                    data-stock-action="entry"
+                >
+                    <strong>Registrar entrada</strong>
+                    <span>Compras e reposições</span>
                 </a>
 
-                <a href="/estoque/entrada/" class="action-link secondary">
-                    + Nova entrada de estoque
+                <a
+                    href="{% url 'products:product_create' %}"
+                    class="stock-quick-action"
+                    data-stock-action="product"
+                >
+                    <strong>Novo produto</strong>
+                    <span>Cadastrar um item</span>
                 </a>
             {% endif %}
 
-            <a href="{% url 'products:stock_report_pdf' %}" class="action-link">
-                Baixar PDF do estoque
+            {% if can_adjust_stock %}
+                <a
+                    href="{% url 'products:stock_count_adjust' %}"
+                    class="stock-quick-action"
+                    data-stock-action="count"
+                >
+                    <strong>Fazer conferência</strong>
+                    <span>Registrar a contagem real</span>
+                </a>
+            {% endif %}
+
+            <a
+                href="{% url 'products:shopping_list' %}"
+                class="stock-quick-action"
+                data-stock-action="shopping"
+            >
+                <strong>Lista de compras</strong>
+                <span>Planejar reposições</span>
             </a>
-        </div>
+
+            <a
+                href="{% url 'products:stock_report_pdf' %}"
+                class="stock-quick-action"
+                data-stock-action="pdf"
+            >
+                <strong>Gerar PDF do estoque</strong>
+                <span>Exportar a visão atual</span>
+            </a>
+            </div>
+        </section>
 
         <div class="filters-card">
             <input
@@ -64,20 +106,20 @@
                         Todos
                     </button>
 
-                    <button type="button" class="filter-button" onclick="setStatusFilter('ok', this)">
-                        Disponível
+                    <button type="button" class="filter-button" onclick="setStatusFilter('empty', this)">
+                        Esgotado
+                    </button>
+
+                    <button type="button" class="filter-button danger" onclick="setStatusFilter('critical', this)">
+                        Crítico
                     </button>
 
                     <button type="button" class="filter-button" onclick="setStatusFilter('low', this)">
                         Baixo
                     </button>
 
-                    <button type="button" class="filter-button" onclick="setStatusFilter('empty', this)">
-                        Esgotado
-                    </button>
-
-                    <button type="button" class="filter-button danger" onclick="setStatusFilter('critical', this)">
-                        Críticos
+                    <button type="button" class="filter-button" onclick="setStatusFilter('ok', this)">
+                        OK
                     </button>
                 </div>
             </div>
@@ -92,45 +134,26 @@
                         <th>Produto</th>
                         <th>Categoria</th>
                         <th>Estoque</th>
+                        <th>Estoque recomendado</th>
+                        <th>Status</th>
                         <th>Custo médio</th>
                         <th>Preço venda</th>
                         <th>Lucro/un.</th>
                         <th>Capital em estoque</th>
                         <th>Lucro potencial</th>
-                        <th>Status</th>
                     </tr>
                 </thead>
 
                 <tbody id="stock_table_body">
                     {% for product in products %}
-                        {% if product.current_stock <= 0 %}
-                            <tr
-                                class="stock-row"
-                                data-product-id="{{ product.id }}"
-                                data-name="{{ product.name|escape }}"
-                                data-category="{{ product.category|default:'Sem categoria'|escapejs }}"
-                                data-status="empty"
-                                data-search="{{ product.name|lower }} {{ product.category|default:''|lower }} {{ product.unit|lower }} esgotado zerado sem estoque {{ product.sale_price }}"
-                            >
-                        {% elif product.current_stock <= product.minimum_quantity %}
-                            <tr
-                                class="stock-row"
-                                data-product-id="{{ product.id }}"
-                                data-name="{{ product.name|escape }}"
-                                data-category="{{ product.category|default:'Sem categoria'|escapejs }}"
-                                data-status="low"
-                                data-search="{{ product.name|lower }} {{ product.category|default:''|lower }} {{ product.unit|lower }} baixo critico crítico {{ product.sale_price }}"
-                            >
-                        {% else %}
-                            <tr
-                                class="stock-row"
-                                data-product-id="{{ product.id }}"
-                                data-name="{{ product.name|escape }}"
-                                data-category="{{ product.category|default:'Sem categoria'|escapejs }}"
-                                data-status="ok"
-                                data-search="{{ product.name|lower }} {{ product.category|default:''|lower }} {{ product.unit|lower }} disponivel disponível estoque {{ product.sale_price }}"
-                            >
-                        {% endif %}
+                        <tr
+                            class="stock-row"
+                            data-product-id="{{ product.id }}"
+                            data-name="{{ product.name|escape }}"
+                            data-category="{{ product.category.name|default:'' }}"
+                            data-status="{{ product.stock_status }}"
+                            data-search="{{ product.name|lower }} {{ product.category.name|default:''|lower }} {{ product.unit|lower }} {{ product.stock_status_label|lower }} estoque recomendado {{ product.sale_price }}"
+                        >
                             <td>
                                 <div class="product-name">{{ product.name }}</div>
                                 <div class="muted">
@@ -140,13 +163,24 @@
 
                             <td>
                                 <span class="badge">
-                                    {{ product.category|default:"Sem categoria" }}
+                                    {{ product.category.name|default:"Sem categoria" }}
                                 </span>
                             </td>
 
                             <td>
                                 {{ product.current_stock|floatformat:2 }}
                                 {{ product.unit }}
+                            </td>
+
+                            <td>
+                                {{ product.minimum_quantity|floatformat:2 }}
+                                {{ product.unit }}
+                            </td>
+
+                            <td>
+                                <span class="stock-status stock-status--{{ product.stock_status }}">
+                                    {{ product.stock_status_label }}
+                                </span>
                             </td>
 
                             <td class="money">
@@ -168,20 +202,10 @@
                             <td class="money">
                                 R$ {{ product.potential_profit|floatformat:2 }}
                             </td>
-
-                            <td>
-                                {% if product.current_stock <= 0 %}
-                                    <span class="empty">Esgotado</span>
-                                {% elif product.current_stock <= product.minimum_quantity %}
-                                    <span class="low">Baixo</span>
-                                {% else %}
-                                    <span class="ok">Disponível</span>
-                                {% endif %}
-                            </td>
                         </tr>
                     {% empty %}
                         <tr>
-                            <td colspan="9">Nenhum produto cadastrado ainda.</td>
+                            <td colspan="10">Nenhum produto cadastrado ainda.</td>
                         </tr>
                     {% endfor %}
                 </tbody>
@@ -190,19 +214,19 @@
             <div class="stock-mobile-list" id="stock_mobile_list">
                 {% for product in products %}
                     <article
-                        class="stock-mobile-card{% if product.current_stock <= 0 %} stock-mobile-card--empty{% elif product.current_stock <= product.minimum_quantity %} stock-mobile-card--low{% else %} stock-mobile-card--ok{% endif %}"
+                        class="stock-mobile-card stock-mobile-card--{{ product.stock_status }}"
                         data-product-id="{{ product.id }}"
                         data-name="{{ product.name|escape }}"
-                        data-category="{{ product.category|default:'Sem categoria'|escapejs }}"
-                        data-status="{% if product.current_stock <= 0 %}empty{% elif product.current_stock <= product.minimum_quantity %}low{% else %}ok{% endif %}"
-                        data-search="{{ product.name|lower }} {{ product.category|default:''|lower }} {{ product.unit|lower }} {% if product.current_stock <= 0 %}esgotado zerado sem estoque{% elif product.current_stock <= product.minimum_quantity %}baixo critico crítico{% else %}disponivel disponível estoque{% endif %} {{ product.sale_price }}"
+                        data-category="{{ product.category.name|default:'' }}"
+                        data-status="{{ product.stock_status }}"
+                        data-search="{{ product.name|lower }} {{ product.category.name|default:''|lower }} {{ product.unit|lower }} {{ product.stock_status_label|lower }} estoque recomendado {{ product.sale_price }}"
                     >
                         <div class="stock-mobile-card-header">
                             <div class="stock-mobile-product">
                                 <h2>{{ product.name }}</h2>
                                 <div class="stock-mobile-product-meta">
                                     <span class="stock-mobile-category">
-                                        {{ product.category|default:"Sem categoria" }}
+                                        {{ product.category.name|default:"Sem categoria" }}
                                     </span>
                                     {% if product.unit %}
                                         <span>Unidade: {{ product.unit }}</span>
@@ -210,13 +234,9 @@
                                 </div>
                             </div>
 
-                            {% if product.current_stock <= 0 %}
-                                <span class="stock-mobile-status stock-mobile-status--empty">Esgotado</span>
-                            {% elif product.current_stock <= product.minimum_quantity %}
-                                <span class="stock-mobile-status stock-mobile-status--low">Estoque baixo</span>
-                            {% else %}
-                                <span class="stock-mobile-status stock-mobile-status--ok">Disponível</span>
-                            {% endif %}
+                            <span class="stock-mobile-status stock-mobile-status--{{ product.stock_status }}">
+                                {{ product.stock_status_label }}
+                            </span>
                         </div>
 
                         <div class="stock-mobile-quantity-block">
@@ -228,7 +248,7 @@
 
                             {% if product.minimum_quantity %}
                                 <small>
-                                    Estoque mínimo:
+                                    Estoque recomendado:
                                     {{ product.minimum_quantity|floatformat:2 }}
                                     {{ product.unit }}
                                 </small>

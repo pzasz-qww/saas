@@ -1,40 +1,163 @@
 from functools import wraps
 
 from django.contrib import messages
-from django.shortcuts import redirect
+from django.shortcuts import redirect, render
 
 from companies.models import Company
 
 
+SUPPORT_COMPANY_SESSION_KEY = "support_company_id"
+
+# Não há estado operacional persistido em sessão hoje. Esta lista protege a
+# troca de empresa caso carrinho/filtros passem a ser armazenados nela.
+SUPPORT_OPERATIONAL_SESSION_KEYS = {
+    "cart",
+    "cart_data",
+    "pdv_cart",
+    "order_filters",
+    "orders_filter",
+    "stock_filters",
+    "report_filters",
+}
+SUPPORT_OPERATIONAL_SESSION_PREFIXES = (
+    "cart_",
+    "pdv_",
+    "order_",
+    "orders_",
+    "stock_",
+    "sale_",
+    "sales_",
+    "report_",
+    "filter_",
+)
+
+
 def get_user_profile(user):
-    if not user.is_authenticated:
+    if not getattr(user, "is_authenticated", False):
         return None
 
     return getattr(user, "profile", None)
 
 
 def get_user_company(user):
+    """Retorna exclusivamente a empresa permanente do usuário comum."""
     profile = get_user_profile(user)
 
-    if profile:
-        return profile.company
+    if profile is None:
+        return None
 
-    if user.is_superuser:
-        return Company.objects.filter(active=True).first()
+    return profile.company
 
-    return None
+
+def is_support_user(user):
+    return bool(
+        getattr(user, "is_authenticated", False)
+        and (user.is_staff or user.is_superuser)
+    )
+
+
+def get_current_company(request):
+    """
+    Resolve a empresa atual sem fallback automático.
+
+    Usuários comuns usam somente Profile.company. Staff e superusuários usam
+    somente a empresa escolhida explicitamente na sessão.
+    """
+    user = getattr(request, "user", None)
+
+    if not getattr(user, "is_authenticated", False):
+        return None
+
+    session = getattr(request, "session", None)
+
+    if not is_support_user(user):
+        # Uma seleção antiga nunca deve sobreviver à remoção do acesso staff.
+        if session is not None:
+            session.pop(SUPPORT_COMPANY_SESSION_KEY, None)
+        return get_user_company(user)
+
+    if session is None:
+        return None
+
+    company_id = session.get(SUPPORT_COMPANY_SESSION_KEY)
+
+    try:
+        company_id = int(company_id)
+    except (TypeError, ValueError):
+        if company_id is not None:
+            session.pop(SUPPORT_COMPANY_SESSION_KEY, None)
+        return None
+
+    if company_id <= 0:
+        session.pop(SUPPORT_COMPANY_SESSION_KEY, None)
+        return None
+
+    company = Company.objects.filter(pk=company_id).first()
+
+    if company is None:
+        session.pop(SUPPORT_COMPANY_SESSION_KEY, None)
+
+    return company
+
+
+def clear_support_operational_session(request):
+    """Remove somente estados operacionais que não podem atravessar empresas."""
+    for key in list(request.session.keys()):
+        if (
+            key in SUPPORT_OPERATIONAL_SESSION_KEYS
+            or key.startswith(SUPPORT_OPERATIONAL_SESSION_PREFIXES)
+        ):
+            request.session.pop(key, None)
+
+
+def support_user_required(view_func):
+    @wraps(view_func)
+    def wrapper(request, *args, **kwargs):
+        if not is_support_user(request.user):
+            return render(
+                request,
+                "accounts/support_forbidden.html",
+                status=403,
+            )
+
+        return view_func(request, *args, **kwargs)
+
+    return wrapper
+
+
+def company_required(view_func):
+    @wraps(view_func)
+    def wrapper(request, *args, **kwargs):
+        company = get_current_company(request)
+
+        if company is None or not company.active:
+            return render(
+                request,
+                "accounts/company_required.html",
+                {
+                    "blocked_company": company,
+                    "support_user": is_support_user(request.user),
+                },
+                status=403,
+            )
+
+        request.current_company = company
+        return view_func(request, *args, **kwargs)
+
+    return wrapper
 
 
 def has_permission(user, permission_name):
     if not user.is_authenticated:
         return False
 
-    if user.is_superuser:
+    # Toda view operacional usa company_required antes desta verificação.
+    if is_support_user(user):
         return True
 
     profile = get_user_profile(user)
 
-    if not profile:
+    if not profile or not profile.company.active:
         return False
 
     if profile.role == "owner":

@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+
+{% block title %}Empresa necessária{% endblock %}
+
+{% block content %}
+    <section class="company-required-card" role="alert">
+        {% if support_user %}
+            {% if blocked_company %}
+                <h1>Modo suporte: empresa inativa</h1>
+                <p>
+                    A empresa <strong>{{ blocked_company.name }}</strong> está inativa.
+                    Selecione uma empresa ativa para continuar.
+                </p>
+            {% else %}
+                <h1>Modo suporte: nenhuma empresa selecionada</h1>
+                <p>
+                    Empresa não vinculada ou não selecionada.
+                    Selecione uma empresa para continuar.
+                </p>
+            {% endif %}
+
+            <div class="company-required-actions">
+                <a href="{% url 'accounts:support_companies' %}">Selecionar empresa</a>
+
+                {% if blocked_company %}
+                    <form method="post" action="{% url 'accounts:clear_support_company' %}">
+                        {% csrf_token %}
+                        <button type="submit">Sair do modo suporte</button>
+                    </form>
+                {% endif %}
+            </div>
+        {% elif blocked_company %}
+            <h1>Empresa inativa</h1>
+            <p>
+                A empresa <strong>{{ blocked_company.name }}</strong> está inativa.
+                As operações permanecem bloqueadas até a reativação por um superusuário.
+            </p>
+        {% else %}
+            <h1>Empresa não vinculada</h1>
+            <p>
+                Seu usuário ainda não está vinculado a uma empresa.
+                Entre em contato com o administrador para liberar o acesso.
+            </p>
+        {% endif %}
+    </section>
+{% endblock %}

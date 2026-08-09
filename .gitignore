@@ -23,4 +23,5 @@ env/
 
 # Sistema operacional
 .DS_Store
-Thumbs.db
+Thumbs.dbdb.sqlite3.bak
+db.sqlite3.bak

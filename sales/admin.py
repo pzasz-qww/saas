@@ -1,11 +1,13 @@
 from django.contrib import admin
+from django.core.exceptions import ObjectDoesNotExist
 
 from .models import Sale, SaleItem
 
 
 class SaleItemInline(admin.TabularInline):
     model = SaleItem
-    extra = 1
+    extra = 0
+    can_delete = False
 
     fields = (
         "product",
@@ -16,12 +18,13 @@ class SaleItemInline(admin.TabularInline):
         "total_cost",
     )
 
-    readonly_fields = (
-        "unit_price",
-        "unit_cost",
-        "total_price",
-        "total_cost",
-    )
+    readonly_fields = fields
+
+    def has_add_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
 
 
 @admin.register(Sale)
@@ -31,7 +34,9 @@ class SaleAdmin(admin.ModelAdmin):
     list_display = (
         "id",
         "company",
+        "show_order",
         "payment_method",
+        "status",
         "total_amount",
         "total_cost",
         "gross_profit",
@@ -42,25 +47,49 @@ class SaleAdmin(admin.ModelAdmin):
     list_filter = (
         "company",
         "payment_method",
+        "status",
         "created_at",
     )
 
-    search_fields = ("id",)
+    search_fields = (
+        "=id",
+        "company__name",
+        "=order__id",
+        "created_by__username",
+        "created_by__first_name",
+        "created_by__last_name",
+    )
 
     readonly_fields = (
+        "company",
+        "show_order",
+        "payment_method",
+        "status",
         "total_amount",
         "total_cost",
         "gross_profit",
+        "created_by",
         "created_at",
     )
 
+    ordering = ("-created_at",)
+
     fieldsets = (
         (
-            "Venda",
+            "Dados principais",
             {
                 "fields": (
                     "company",
+                    "show_order",
+                )
+            },
+        ),
+        (
+            "Pagamento",
+            {
+                "fields": (
                     "payment_method",
+                    "status",
                 )
             },
         ),
@@ -71,6 +100,15 @@ class SaleAdmin(admin.ModelAdmin):
                     "total_amount",
                     "total_cost",
                     "gross_profit",
+                ),
+                "classes": ("collapse",),
+            },
+        ),
+        (
+            "Auditoria",
+            {
+                "fields": (
+                    "created_by",
                     "created_at",
                 ),
                 "classes": ("collapse",),
@@ -84,11 +122,34 @@ class SaleAdmin(admin.ModelAdmin):
 
         super().save_model(request, obj, form, change)
 
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+    def show_order(self, obj):
+        if not obj:
+            return "-"
+
+        try:
+            order = obj.order
+        except ObjectDoesNotExist:
+            return "-"
+
+        return f"Pedido #{order.id}"
+
+    show_order.short_description = "Pedido"
+
 
 @admin.register(SaleItem)
 class SaleItemAdmin(admin.ModelAdmin):
     list_display = (
         "sale",
+        "company",
         "product",
         "quantity",
         "unit_price",
@@ -106,13 +167,61 @@ class SaleItemAdmin(admin.ModelAdmin):
 
     search_fields = (
         "product__name",
-        "sale__id",
+        "company__name",
+        "=sale__id",
     )
 
     readonly_fields = (
+        "sale",
+        "company",
+        "product",
+        "quantity",
         "unit_price",
         "unit_cost",
         "total_price",
         "total_cost",
         "created_at",
+    )
+
+    ordering = ("-created_at",)
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+    fieldsets = (
+        (
+            "Item da venda",
+            {
+                "fields": (
+                    "sale",
+                    "company",
+                    "product",
+                    "quantity",
+                )
+            },
+        ),
+        (
+            "Valores",
+            {
+                "fields": (
+                    "unit_price",
+                    "unit_cost",
+                    "total_price",
+                    "total_cost",
+                )
+            },
+        ),
+        (
+            "Auditoria",
+            {
+                "fields": ("created_at",),
+                "classes": ("collapse",),
+            },
+        ),
     )

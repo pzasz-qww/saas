@@ -17,6 +17,14 @@
     {% endif %}
 
     <div class="stock-count-card">
+        {% if menu_permissions.can_view_stock %}
+            <nav class="module-return" aria-label="Navegação do estoque">
+                <a href="{% url 'products:stock_dashboard' %}" class="module-back-link">
+                    Voltar para o estoque
+                </a>
+            </nav>
+        {% endif %}
+
         <h1>Conferência de estoque</h1>
         <p class="subtitle">
             Informe a contagem real. O sistema calcula a diferença e registra o ajuste.
@@ -52,15 +60,15 @@
                         type="button"
                         class="product-card"
                         data-id="{{ product.id }}"
-                        data-name="{{ product.name|escapejs }}"
-                        data-category="{{ product.category|default:'Sem categoria'|escapejs }}"
-                        data-unit="{{ product.unit|escapejs }}"
+                        data-name="{{ product.name }}"
+                        data-category="{{ product.category.name|default:'' }}"
+                        data-unit="{{ product.unit }}"
                         data-stock="{{ product.current_stock|floatformat:2 }}"
-                        data-search="{{ product.name|lower }} {{ product.category|default:''|lower }} {{ product.unit|lower }} {{ product.sale_price }}"
+                        data-search="{{ product.name|lower }} {{ product.category.name|default:''|lower }} {{ product.unit|lower }} {{ product.sale_price }}"
                     >
                         <div class="product-name">{{ product.name }}</div>
                         <div class="product-meta">
-                            {{ product.category|default:"Sem categoria" }}<br>
+                            {{ product.category.name|default:"Sem categoria" }}<br>
                             Estoque esperado: {{ product.current_stock|floatformat:2 }} {{ product.unit }}<br>
                             Unidade: {{ product.unit }}
                         </div>

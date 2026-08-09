@@ -8,12 +8,16 @@ class StaffRoleAdmin(admin.ModelAdmin):
     list_display = (
         "name",
         "company",
+        "show_order_permissions",
+        "show_stock_permissions",
+        "show_admin_permissions",
         "can_access_pdv",
         "can_create_order",
         "can_approve_order",
         "can_view_stock",
         "can_adjust_stock",
         "can_manage_users",
+        "created_at",
     )
 
     list_filter = (
@@ -29,6 +33,9 @@ class StaffRoleAdmin(admin.ModelAdmin):
         "name",
         "company__name",
     )
+
+    readonly_fields = ("created_at",)
+    ordering = ("company__name", "name")
 
     fieldsets = (
         (
@@ -81,16 +88,68 @@ class StaffRoleAdmin(admin.ModelAdmin):
                 )
             },
         ),
+        (
+            "Auditoria",
+            {
+                "fields": ("created_at",),
+                "classes": ("collapse",),
+            },
+        ),
     )
+
+    def show_order_permissions(self, obj):
+        permissions = []
+
+        if obj.can_create_order:
+            permissions.append("cria pedido")
+        if obj.can_approve_order:
+            permissions.append("aprova venda")
+        if obj.can_mark_delivered:
+            permissions.append("marca entregue")
+
+        return ", ".join(permissions) or "-"
+
+    show_order_permissions.short_description = "Pedidos"
+
+    def show_stock_permissions(self, obj):
+        permissions = []
+
+        if obj.can_view_stock:
+            permissions.append("vê estoque")
+        if obj.can_create_stock_entry:
+            permissions.append("entrada")
+        if obj.can_adjust_stock:
+            permissions.append("ajuste")
+
+        return ", ".join(permissions) or "-"
+
+    show_stock_permissions.short_description = "Estoque"
+
+    def show_admin_permissions(self, obj):
+        permissions = []
+
+        if obj.can_view_reports:
+            permissions.append("relatórios")
+        if obj.can_manage_users:
+            permissions.append("equipe")
+
+        return ", ".join(permissions) or "-"
+
+    show_admin_permissions.short_description = "Administração"
 
 
 @admin.register(Profile)
 class ProfileAdmin(admin.ModelAdmin):
     list_display = (
         "user",
+        "show_display_name",
         "company",
-        "role_template",
         "role",
+        "role_template",
+        "show_user_is_active",
+        "show_order_permissions",
+        "show_stock_permissions",
+        "show_admin_permissions",
         "can_access_pdv",
         "can_create_order",
         "can_approve_order",
@@ -104,6 +163,7 @@ class ProfileAdmin(admin.ModelAdmin):
         "company",
         "role_template",
         "role",
+        "user__is_active",
         "can_access_pdv",
         "can_create_order",
         "can_approve_order",
@@ -120,12 +180,29 @@ class ProfileAdmin(admin.ModelAdmin):
         "role_template__name",
     )
 
+    readonly_fields = (
+        "show_display_name",
+        "show_user_is_active",
+        "created_at",
+    )
+
+    ordering = ("company__name", "user__first_name", "user__username")
+
     fieldsets = (
         (
-            "Funcionário",
+            "Dados básicos",
             {
                 "fields": (
                     "user",
+                    "show_display_name",
+                    "show_user_is_active",
+                )
+            },
+        ),
+        (
+            "Empresa e função",
+            {
+                "fields": (
                     "company",
                     "role_template",
                     "role",
@@ -154,23 +231,30 @@ class ProfileAdmin(admin.ModelAdmin):
             },
         ),
         (
-            "Estoque",
+            "Estoque e relatórios",
             {
                 "fields": (
                     "can_view_stock",
                     "can_create_stock_entry",
                     "can_adjust_stock",
+                    "can_view_reports",
                 )
             },
         ),
         (
-            "Painéis e administração",
+            "Permissões administrativas",
             {
                 "fields": (
                     "can_view_orders_panel",
-                    "can_view_reports",
                     "can_manage_users",
                 )
+            },
+        ),
+        (
+            "Auditoria",
+            {
+                "fields": ("created_at",),
+                "classes": ("collapse",),
             },
         ),
     )
@@ -178,6 +262,65 @@ class ProfileAdmin(admin.ModelAdmin):
     actions = (
         "apply_default_permissions",
     )
+
+    def show_display_name(self, obj):
+        if not obj or not obj.user_id:
+            return "-"
+
+        return obj.user.get_full_name() or obj.user.username
+
+    show_display_name.short_description = "Nome visível"
+
+    def show_user_is_active(self, obj):
+        if not obj or not obj.user_id:
+            return False
+
+        return obj.user.is_active
+
+    show_user_is_active.boolean = True
+    show_user_is_active.short_description = "Usuário ativo"
+
+    def show_order_permissions(self, obj):
+        permissions = []
+
+        if obj.can_create_order:
+            permissions.append("cria pedido")
+        if obj.can_approve_order:
+            permissions.append("aprova venda")
+        if obj.can_mark_delivered:
+            permissions.append("marca entregue")
+
+        return ", ".join(permissions) or "-"
+
+    show_order_permissions.short_description = "Pedidos"
+
+    def show_stock_permissions(self, obj):
+        permissions = []
+
+        if obj.can_view_stock:
+            permissions.append("vê estoque")
+        if obj.can_create_stock_entry:
+            permissions.append("entrada")
+        if obj.can_adjust_stock:
+            permissions.append("ajuste")
+
+        return ", ".join(permissions) or "-"
+
+    show_stock_permissions.short_description = "Estoque"
+
+    def show_admin_permissions(self, obj):
+        permissions = []
+
+        if obj.can_view_orders_panel:
+            permissions.append("painel")
+        if obj.can_view_reports:
+            permissions.append("relatórios")
+        if obj.can_manage_users:
+            permissions.append("equipe")
+
+        return ", ".join(permissions) or "-"
+
+    show_admin_permissions.short_description = "Administração"
 
     def apply_default_permissions(self, request, queryset):
         for profile in queryset:

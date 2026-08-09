@@ -1,10 +1,11 @@
 from decimal import Decimal
 
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.db import models
 
 from companies.models import Company
-from products.models import Product, StockMovement
+from products.models import Product
 
 
 class Sale(models.Model):
@@ -49,11 +50,25 @@ class Sale(models.Model):
         verbose_name_plural = "Vendas"
         ordering = ["-created_at"]
 
+    def save(self, *args, **kwargs):
+        valid_payment_methods = {
+            value
+            for value, _label in self.PAYMENT_METHODS
+        }
+
+        if self.payment_method not in valid_payment_methods:
+            raise ValidationError("Forma de pagamento inválida.")
+
+        super().save(*args, **kwargs)
+
     def recalculate_totals(self):
         total_amount = Decimal("0.00")
         total_cost = Decimal("0.00")
 
-        for item in self.items.all():
+        for item in self.items.filter(
+            company=self.company,
+            product__company=self.company,
+        ):
             total_amount += item.total_price
             total_cost += item.total_cost
 
@@ -87,33 +102,34 @@ class SaleItem(models.Model):
         verbose_name_plural = "Itens da venda"
 
     def save(self, *args, **kwargs):
-        is_new = self.pk is None
+        if (
+            self.quantity is None
+            or not self.quantity.is_finite()
+            or self.quantity <= 0
+        ):
+            raise ValidationError(
+                "A quantidade do item deve ser maior que zero."
+            )
 
-        if self.company_id is None and self.sale_id is not None:
-            self.company = self.sale.company
+        if self.sale_id is None:
+            raise ValidationError("O item deve estar vinculado a uma venda.")
 
-        if self.unit_price == 0:
-            self.unit_price = self.product.sale_price
+        if self.product_id is None:
+            raise ValidationError("O item deve estar vinculado a um produto.")
 
-        if self.unit_cost == 0:
-            self.unit_cost = self.product.average_cost
+        if self.company_id is None:
+            self.company_id = self.sale.company_id
+
+        if self.sale_id and self.company_id != self.sale.company_id:
+            raise ValidationError("O item deve pertencer à mesma empresa da venda.")
+
+        if self.product_id and self.company_id != self.product.company_id:
+            raise ValidationError("O produto deve pertencer à mesma empresa da venda.")
 
         self.total_price = self.quantity * self.unit_price
         self.total_cost = self.quantity * self.unit_cost
 
         super().save(*args, **kwargs)
-
-        if is_new:
-            StockMovement.objects.create(
-                company=self.company,
-                product=self.product,
-                movement_type="sale",
-                quantity=self.quantity,
-                sale_value=self.total_price,
-                cost_value=self.total_cost,
-                reason=f"Venda #{self.sale.id}",
-                created_by=self.sale.created_by,
-            )
 
         self.sale.recalculate_totals()
 

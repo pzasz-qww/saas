@@ -27,25 +27,75 @@
     margin-bottom: 20px;
 }
 
-.actions-top {
+.stock-quick-actions {
     margin-bottom: 18px;
-    display: flex;
-    flex-wrap: wrap;
-    gap: 10px;
+    border: 1px solid #dbeafe;
+    border-radius: 14px;
+    padding: 16px;
+    background: #eff6ff;
 }
 
-.action-link {
-    background: #2563eb;
-    color: white;
-    padding: 10px 12px;
-    border-radius: 8px;
-    text-decoration: none;
-    font-weight: bold;
+.stock-quick-actions-heading {
+    margin-bottom: 12px;
+}
+
+.stock-quick-actions-heading h2 {
+    margin: 0;
+    font-size: 19px;
+}
+
+.stock-quick-actions-heading p {
+    margin: 4px 0 0;
+    color: #4b5563;
     font-size: 14px;
 }
 
-.action-link.secondary {
-    background: #059669;
+.stock-quick-actions-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 10px;
+}
+
+.stock-quick-action {
+    display: flex;
+    min-width: 0;
+    min-height: 76px;
+    flex-direction: column;
+    justify-content: center;
+    border: 1px solid #bfdbfe;
+    border-radius: 12px;
+    padding: 13px;
+    background: #ffffff;
+    color: #1e3a8a;
+    text-decoration: none;
+    overflow-wrap: anywhere;
+}
+
+.stock-quick-action strong,
+.stock-quick-action span {
+    display: block;
+}
+
+.stock-quick-action strong {
+    font-size: 15px;
+    line-height: 1.3;
+}
+
+.stock-quick-action span {
+    margin-top: 4px;
+    color: #4b5563;
+    font-size: 12px;
+    line-height: 1.35;
+}
+
+.stock-quick-action:hover {
+    border-color: #2563eb;
+    box-shadow: 0 4px 12px rgba(37, 99, 235, 0.12);
+}
+
+.stock-quick-action:focus-visible {
+    outline: 3px solid #2563eb;
+    outline-offset: 3px;
 }
 
 .filters-card {
@@ -120,7 +170,7 @@
 .stock-table {
     width: 100%;
     border-collapse: collapse;
-    min-width: 920px;
+    min-width: 1040px;
 }
 
 .stock-table th {
@@ -158,6 +208,34 @@
 
 .money {
     font-weight: bold;
+}
+
+.stock-status {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 26px;
+    border-radius: 999px;
+    padding: 5px 9px;
+    font-size: 12px;
+    font-weight: bold;
+    white-space: nowrap;
+}
+
+.stock-status--ok {
+    background: #dcfce7;
+    color: #166534;
+}
+
+.stock-status--empty,
+.stock-status--critical {
+    background: #fee2e2;
+    color: #991b1b;
+}
+
+.stock-status--low {
+    background: #fef3c7;
+    color: #92400e;
 }
 
 .ok {
@@ -210,16 +288,6 @@
         border-radius: 8px;
     }
 
-    .action-link {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        width: 100%;
-        min-height: 48px;
-        box-sizing: border-box;
-        text-align: center;
-    }
-
     .search-input {
         min-height: 48px;
         font-size: 15px;
@@ -257,12 +325,19 @@
         box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
     }
 
+    .stock-mobile-card--ok {
+        border-color: #bbf7d0;
+        border-left-color: #16a34a;
+        background: #ffffff;
+    }
+
     .stock-mobile-card--low {
         border-color: #f59e0b;
         border-left-color: #d97706;
         background: #fffbeb;
     }
 
+    .stock-mobile-card--critical,
     .stock-mobile-card--empty {
         border-color: #fca5a5;
         border-left-color: #dc2626;
@@ -324,7 +399,8 @@
         color: #92400e;
     }
 
-    .stock-mobile-status--empty {
+    .stock-mobile-status--empty,
+    .stock-mobile-status--critical {
         background: #fee2e2;
         color: #991b1b;
     }
@@ -357,6 +433,7 @@
         color: #92400e;
     }
 
+    .stock-mobile-card--critical .stock-mobile-quantity-block strong,
     .stock-mobile-card--empty .stock-mobile-quantity-block strong {
         color: #991b1b;
     }
@@ -399,6 +476,28 @@
 
     .no-results {
         margin-top: 0;
+    }
+}
+
+@media (min-width: 370px) {
+    .stock-quick-actions-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (min-width: 700px) {
+    .stock-quick-actions {
+        padding: 18px;
+    }
+
+    .stock-quick-actions-grid {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+}
+
+@media (min-width: 1000px) {
+    .stock-quick-actions-grid {
+        grid-template-columns: repeat(5, minmax(0, 1fr));
     }
 }
 
