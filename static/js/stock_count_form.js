@@ -20,6 +20,13 @@ function parseNumber(value) {
     return number;
 }
 
+function formatQuantity(value) {
+    return value.toLocaleString("pt-BR", {
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 6,
+    });
+}
+
 function filterProducts() {
     const query = normalizeText(document.getElementById("product_search").value);
     const cards = document.querySelectorAll(".product-card");
@@ -55,7 +62,7 @@ function selectProduct(card) {
     const selectedBox = document.getElementById("selected_product_box");
     selectedBox.style.display = "block";
     const details = document.createElement("small");
-    details.textContent = `${selectedCategory} · Estoque esperado: ${selectedStock.toFixed(2)} ${selectedUnit}`;
+    details.textContent = `${selectedCategory} · Estoque esperado: ${formatQuantity(selectedStock)} ${selectedUnit}`;
     selectedBox.replaceChildren(
         document.createTextNode(`Produto selecionado: ${selectedName}`),
         document.createElement("br"),
@@ -89,15 +96,15 @@ function calculateDifference() {
 
     if (difference > 0) {
         differenceValue.className = "difference-positive";
-        differenceValue.textContent = `+${difference.toFixed(2)} ${selectedUnit}`;
+        differenceValue.textContent = `+${formatQuantity(difference)} ${selectedUnit}`;
         explanation = "Será criado um ajuste positivo.";
     } else if (difference < 0) {
         differenceValue.className = "difference-negative";
-        differenceValue.textContent = `${difference.toFixed(2)} ${selectedUnit}`;
+        differenceValue.textContent = `${formatQuantity(difference)} ${selectedUnit}`;
         explanation = "Será criado um ajuste negativo.";
     } else {
         differenceValue.className = "difference-zero";
-        differenceValue.textContent = `0.00 ${selectedUnit}`;
+        differenceValue.textContent = `0 ${selectedUnit}`;
         explanation = "A conferência será registrada sem alterar o estoque.";
     }
 

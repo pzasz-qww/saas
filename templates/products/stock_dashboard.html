@@ -168,12 +168,12 @@
                             </td>
 
                             <td>
-                                {{ product.current_stock|floatformat:2 }}
+                                {{ product.current_stock|floatformat:-6 }}
                                 {{ product.unit }}
                             </td>
 
                             <td>
-                                {{ product.minimum_quantity|floatformat:2 }}
+                                {{ product.minimum_quantity|floatformat:-6 }}
                                 {{ product.unit }}
                             </td>
 
@@ -242,14 +242,14 @@
                         <div class="stock-mobile-quantity-block">
                             <span>Quantidade atual</span>
                             <strong>
-                                {{ product.current_stock|floatformat:2 }}
+                                {{ product.current_stock|floatformat:-6 }}
                                 {{ product.unit }}
                             </strong>
 
                             {% if product.minimum_quantity %}
                                 <small>
                                     Estoque recomendado:
-                                    {{ product.minimum_quantity|floatformat:2 }}
+                                    {{ product.minimum_quantity|floatformat:-6 }}
                                     {{ product.unit }}
                                 </small>
                             {% endif %}

@@ -141,11 +141,8 @@ class ProductCategoryCreateViewTests(TestCase):
                     category="Categoria órfã",
                     product_type=product_type,
                 )
-                self.assertRedirects(
-                    response,
-                    reverse("products:product_create"),
-                    fetch_redirect_response=False,
-                )
+                self.assertEqual(response.status_code, 200)
+                self.assertIn("product_type", response.context["form"].errors)
 
         self.assertFalse(Product.objects.exists())
         self.assertFalse(Category.objects.exists())

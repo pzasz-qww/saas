@@ -45,6 +45,15 @@ class StockShortage:
     available: Decimal
 
 
+@dataclass(frozen=True)
+class StockCountResult:
+    expected_quantity: Decimal
+    real_quantity: Decimal
+    difference: Decimal
+    stock_count_movement: StockMovement
+    adjustment_movements: tuple[StockMovement, ...]
+
+
 def _company_id(company):
     company_id = getattr(company, "pk", company)
     if company_id is None:
@@ -145,6 +154,66 @@ def _validate_company_product_ids(*, company_id, product_ids):
         )
 
 
+def _lock_company_products(*, company_id, product_ids):
+    """Lock company products in a stable order as the inventory mutex."""
+    _require_atomic_transaction()
+    product_ids = sorted(set(product_ids))
+    if not product_ids:
+        raise InvalidStockOperation("A operação precisa possuir ao menos um produto.")
+
+    products = list(
+        Product.objects.select_for_update()
+        .filter(company_id=company_id, pk__in=product_ids)
+        .order_by("id")
+    )
+    product_by_id = {product.pk: product for product in products}
+    invalid_product_ids = sorted(set(product_ids) - set(product_by_id))
+    if invalid_product_ids:
+        invalid_ids = ", ".join(str(product_id) for product_id in invalid_product_ids)
+        raise InvalidStockOperation(
+            f"Produto(s) fora da empresa informada: {invalid_ids}."
+        )
+
+    return product_by_id
+
+
+def _lock_fifo_entries_for_product_ids(*, company_id, product_ids):
+    """Lock usable entries after their Product mutexes have been acquired."""
+    _require_atomic_transaction()
+    product_ids = sorted(set(product_ids))
+    entries = list(
+        StockEntry.objects.select_for_update()
+        .filter(
+            company_id=company_id,
+            product_id__in=product_ids,
+            remaining_quantity__gt=ZERO,
+        )
+        .order_by("product_id", "created_at", "id")
+    )
+
+    entries_by_product = {product_id: [] for product_id in product_ids}
+    for entry in entries:
+        entries_by_product[entry.product_id].append(entry)
+
+    return entries_by_product
+
+
+def _stock_totals_from_entries(entries):
+    quantity = ZERO
+    cost_value = ZERO
+
+    for entry in entries:
+        remaining_quantity = _nonnegative_decimal(
+            entry.remaining_quantity,
+            field_name=f"saldo da entrada #{entry.pk}",
+        )
+        quantity += remaining_quantity
+        cost_value += remaining_quantity * entry.unit_cost
+
+    average_cost = cost_value / quantity if quantity > ZERO else ZERO
+    return quantity, average_cost
+
+
 def get_stock_shortages(*, company, product_quantities):
     """Return current shortages without locking or changing stock.
 
@@ -227,24 +296,14 @@ def lock_fifo_entries(*, company, product_quantities):
     normalized = _normalize_product_quantities(product_quantities)
     product_ids = list(normalized)
 
-    _validate_company_product_ids(
+    _lock_company_products(
         company_id=company_id,
         product_ids=product_ids,
     )
-
-    entries = list(
-        StockEntry.objects.select_for_update()
-        .filter(
-            company_id=company_id,
-            product_id__in=product_ids,
-            remaining_quantity__gt=ZERO,
-        )
-        .order_by("product_id", "created_at", "id")
+    entries_by_product = _lock_fifo_entries_for_product_ids(
+        company_id=company_id,
+        product_ids=product_ids,
     )
-
-    entries_by_product = {product_id: [] for product_id in product_ids}
-    for entry in entries:
-        entries_by_product[entry.product_id].append(entry)
 
     validate_stock_availability(
         product_quantities=normalized,
@@ -508,6 +567,11 @@ def restore_sale_stock(*, company, sale, created_by=None):
         _positive_decimal(item.quantity)
         item_by_id[item.pk] = item
 
+    _lock_company_products(
+        company_id=company_id,
+        product_ids=[item.product_id for item in sale_items],
+    )
+
     item_ids = list(item_by_id)
     outbound_movements = list(
         StockMovement.objects.select_for_update()
@@ -652,26 +716,16 @@ def restore_sale_stock(*, company, sale, created_by=None):
     return return_movements
 
 
-@transaction.atomic
-def apply_positive_adjustment(
+def _create_positive_adjustment(
     *,
-    company,
+    company_id,
     product,
     quantity,
-    cost_value=None,
-    reason="Ajuste positivo de estoque",
-    notes=None,
-    created_by=None,
+    cost_value,
+    reason,
+    notes,
+    created_by,
 ):
-    """Create an explicit entry and its positive adjustment movement."""
-    company_id = _company_id(company)
-    product = _get_company_product(company_id=company_id, product=product)
-    quantity = _positive_decimal(quantity)
-
-    if cost_value is None:
-        cost_value = quantity * product.average_cost
-    cost_value = _nonnegative_decimal(cost_value, field_name="custo do ajuste")
-
     entry = StockEntry.objects.create(
         company_id=company_id,
         product=product,
@@ -690,6 +744,49 @@ def apply_positive_adjustment(
         movement_type="adjustment_positive",
         quantity=quantity,
         sale_value=ZERO,
+        cost_value=cost_value,
+        reason=reason,
+        notes=notes,
+        created_by=created_by,
+    )
+
+
+@transaction.atomic
+def apply_positive_adjustment(
+    *,
+    company,
+    product,
+    quantity,
+    cost_value=None,
+    reason="Ajuste positivo de estoque",
+    notes=None,
+    created_by=None,
+):
+    """Create an explicit entry and its positive adjustment movement."""
+    company_id = _company_id(company)
+    product = _get_company_product(company_id=company_id, product=product)
+    quantity = _positive_decimal(quantity)
+    products_by_id = _lock_company_products(
+        company_id=company_id,
+        product_ids=[product.pk],
+    )
+    product = products_by_id[product.pk]
+    entries_by_product = _lock_fifo_entries_for_product_ids(
+        company_id=company_id,
+        product_ids=[product.pk],
+    )
+
+    if cost_value is None:
+        _current_quantity, average_cost = _stock_totals_from_entries(
+            entries_by_product[product.pk]
+        )
+        cost_value = quantity * average_cost
+    cost_value = _nonnegative_decimal(cost_value, field_name="custo do ajuste")
+
+    return _create_positive_adjustment(
+        company_id=company_id,
+        product=product,
+        quantity=quantity,
         cost_value=cost_value,
         reason=reason,
         notes=notes,
@@ -728,16 +825,104 @@ def apply_negative_adjustment(
     )
 
 
+@transaction.atomic
+def apply_stock_count(
+    *,
+    company,
+    product,
+    real_quantity,
+    notes=None,
+    created_by=None,
+):
+    """Record and apply one physical stock count as a single transaction."""
+    company_id = _company_id(company)
+    product = _get_company_product(company_id=company_id, product=product)
+    real_quantity = _nonnegative_decimal(
+        real_quantity,
+        field_name="contagem real",
+    )
+
+    products_by_id = _lock_company_products(
+        company_id=company_id,
+        product_ids=[product.pk],
+    )
+    product = products_by_id[product.pk]
+    entries_by_product = _lock_fifo_entries_for_product_ids(
+        company_id=company_id,
+        product_ids=[product.pk],
+    )
+    entries = entries_by_product[product.pk]
+    expected_quantity, average_cost = _stock_totals_from_entries(entries)
+    difference = real_quantity - expected_quantity
+
+    count_notes = (
+        f"Estoque esperado: {expected_quantity}. "
+        f"Contagem real: {real_quantity}. "
+        f"Diferença: {difference}."
+    )
+    if notes:
+        count_notes = f"{count_notes} {notes}"
+
+    stock_count_movement = StockMovement.objects.create(
+        company_id=company_id,
+        product=product,
+        movement_type="stock_count",
+        quantity=real_quantity,
+        sale_value=ZERO,
+        cost_value=real_quantity * average_cost,
+        reason="Conferência de estoque",
+        notes=count_notes,
+        created_by=created_by,
+    )
+
+    adjustment_movements = []
+    if difference > ZERO:
+        adjustment_movements.append(
+            _create_positive_adjustment(
+                company_id=company_id,
+                product=product,
+                quantity=difference,
+                cost_value=difference * average_cost,
+                reason="Ajuste positivo por conferência",
+                notes=notes,
+                created_by=created_by,
+            )
+        )
+    elif difference < ZERO:
+        adjustment_movements.extend(
+            _create_negative_movements(
+                company_id=company_id,
+                product_id=product.pk,
+                quantity=-difference,
+                entries=entries,
+                movement_type="adjustment_negative",
+                created_by=created_by,
+                reason="Ajuste negativo por conferência",
+                notes=notes,
+            )
+        )
+
+    return StockCountResult(
+        expected_quantity=expected_quantity,
+        real_quantity=real_quantity,
+        difference=difference,
+        stock_count_movement=stock_count_movement,
+        adjustment_movements=tuple(adjustment_movements),
+    )
+
+
 __all__ = [
     "InsufficientStock",
     "InvalidStockOperation",
     "StockConcurrencyError",
+    "StockCountResult",
     "StockServiceError",
     "StockShortage",
     "UntraceableSaleStock",
     "aggregate_product_quantities",
     "apply_negative_adjustment",
     "apply_positive_adjustment",
+    "apply_stock_count",
     "consume_stock",
     "get_stock_shortages",
     "lock_fifo_entries",

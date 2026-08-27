@@ -14,6 +14,11 @@
     margin-bottom: 6px;
 }
 
+.product-form-card h2 {
+    margin: 0 0 14px;
+    font-size: 18px;
+}
+
 .product-form-card .subtitle {
     color: #6b7280;
     margin-bottom: 22px;
@@ -34,6 +39,113 @@
     border-radius: 10px;
     font-size: 15px;
     margin-bottom: 16px;
+}
+
+.form-section,
+.advanced-content {
+    padding-top: 6px;
+}
+
+.advanced-settings {
+    margin: 22px 0;
+    border: 1px solid #dbe3ee;
+    border-radius: 12px;
+    background: #f8fafc;
+}
+
+.advanced-settings summary {
+    cursor: pointer;
+    padding: 16px;
+    font-weight: bold;
+    color: #1f2937;
+}
+
+.advanced-settings summary span {
+    margin-left: 6px;
+    color: #6b7280;
+    font-size: 12px;
+    font-weight: normal;
+    text-transform: uppercase;
+}
+
+.advanced-content {
+    padding: 0 16px 16px;
+}
+
+.field-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px;
+}
+
+.components-section {
+    margin-top: 24px;
+    padding-top: 20px;
+    border-top: 1px solid #dbe3ee;
+}
+
+.components-heading {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 14px;
+}
+
+.components-heading p {
+    margin: -8px 0 0;
+    color: #6b7280;
+    font-size: 13px;
+}
+
+.component-row {
+    display: grid;
+    grid-template-columns: minmax(180px, 2fr) minmax(110px, 1fr) minmax(110px, 1fr) auto;
+    align-items: end;
+    gap: 10px;
+    padding: 12px;
+    margin-bottom: 10px;
+    border: 1px solid #dbe3ee;
+    border-radius: 10px;
+    background: white;
+}
+
+.component-row input,
+.component-row select {
+    margin-bottom: 0;
+}
+
+.component-actions {
+    padding-bottom: 2px;
+}
+
+.delete-field {
+    display: none;
+}
+
+.product-form-card .secondary-button,
+.product-form-card .remove-component {
+    width: auto;
+    padding: 10px 12px;
+    background: #e5e7eb;
+    color: #1f2937;
+    font-size: 13px;
+}
+
+.product-form-card .secondary-button:hover,
+.product-form-card .remove-component:hover {
+    background: #d1d5db;
+}
+
+@media (max-width: 700px) {
+    .field-grid,
+    .component-row {
+        grid-template-columns: 1fr;
+    }
+
+    .components-heading {
+        flex-direction: column;
+    }
 }
 
 .checkbox-row {
@@ -82,4 +194,47 @@
     border-radius: 10px;
     margin-bottom: 18px;
     font-weight: bold;
+}
+
+.form-error-summary {
+    margin-bottom: 20px;
+    padding: 14px 16px;
+    border: 1px solid #fca5a5;
+    border-radius: 10px;
+    background: #fef2f2;
+    color: #991b1b;
+}
+
+.form-error-summary strong,
+.form-error-summary span {
+    display: block;
+}
+
+.form-error-summary p {
+    margin: 8px 0 0;
+}
+
+.field-error {
+    margin: -10px 0 14px;
+    color: #b91c1c;
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.component-row .field-error {
+    margin: 6px 0 0;
+}
+
+.product-form-card [aria-invalid="true"] {
+    border-color: #dc2626;
+    background: #fff7f7;
+}
+
+.component-row.has-errors {
+    border-color: #fca5a5;
+    background: #fffafa;
+}
+
+.component-non-field-error {
+    grid-column: 1 / -1;
 }

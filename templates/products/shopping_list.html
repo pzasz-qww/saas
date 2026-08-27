@@ -81,18 +81,18 @@
                             </td>
 
                             <td>
-                                {{ row.current_stock|floatformat:2 }}
+                                {{ row.current_stock|floatformat:-6 }}
                             </td>
 
                             <td>
-                                {{ row.recommended_stock|floatformat:2 }}
+                                {{ row.recommended_stock|floatformat:-6 }}
                                 {% if not row.recommended_defined %}
                                     <small>Não definido</small>
                                 {% endif %}
                             </td>
 
                             <td class="shopping-buy-quantity">
-                                {{ row.suggested_quantity|floatformat:2 }}
+                                {{ row.suggested_quantity|floatformat:-6 }}
                             </td>
 
                             <td>{{ row.unit }}</td>
@@ -132,12 +132,12 @@
                         <div class="shopping-mobile-grid">
                             <div>
                                 <span>Atual</span>
-                                <strong>{{ row.current_stock|floatformat:2 }} {{ row.unit }}</strong>
+                                <strong>{{ row.current_stock|floatformat:-6 }} {{ row.unit }}</strong>
                             </div>
 
                             <div>
                                 <span>Recomendado</span>
-                                <strong>{{ row.recommended_stock|floatformat:2 }} {{ row.unit }}</strong>
+                                <strong>{{ row.recommended_stock|floatformat:-6 }} {{ row.unit }}</strong>
                                 {% if not row.recommended_defined %}
                                     <small>Não definido</small>
                                 {% endif %}
@@ -145,7 +145,7 @@
 
                             <div class="shopping-mobile-buy">
                                 <span>Comprar</span>
-                                <strong>{{ row.suggested_quantity|floatformat:2 }} {{ row.unit }}</strong>
+                                <strong>{{ row.suggested_quantity|floatformat:-6 }} {{ row.unit }}</strong>
                             </div>
                         </div>
 

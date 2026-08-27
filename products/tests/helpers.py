@@ -55,6 +55,13 @@ def make_product(
     sale_price="10.00",
     minimum_quantity="0.00",
     active=True,
+    inventory_role="direct",
+    sale_form="unit",
+    stock_dimension="count",
+    unit_description="",
+    dose_ml=None,
+    portion_g=None,
+    preparation_mode=None,
 ):
     if category is None and category_name is not None:
         category = make_category(company=company, name=category_name)
@@ -66,6 +73,13 @@ def make_product(
         category=category,
         category_legacy=category.name if category else None,
         product_type=product_type,
+        inventory_role=inventory_role,
+        sale_form=sale_form,
+        stock_dimension=stock_dimension,
+        unit_description=unit_description,
+        dose_ml=D(dose_ml) if dose_ml is not None else None,
+        portion_g=D(portion_g) if portion_g is not None else None,
+        preparation_mode=preparation_mode,
         sale_price=D(sale_price),
         minimum_quantity=D(minimum_quantity),
         active=active,

@@ -27,55 +27,219 @@
 
         <h1>Novo produto</h1>
         <p class="subtitle">
-            Cadastre um produto para venda, estoque ou uso interno.
+            Nome, preço e forma de venda são suficientes para o cadastro rápido.
         </p>
 
-        {% if not units %}
-            <div class="warning-box">
-                Nenhuma unidade cadastrada. Antes de cadastrar produtos, crie unidades no Admin, como: un, porção, ml, kg, rolo.
+        {% if submission_failed %}
+            <div class="form-error-summary" role="alert">
+                <strong>Não foi possível cadastrar o produto.</strong>
+                <span>Confira os campos destacados abaixo.</span>
+                {% for error in form.non_field_errors %}
+                    <p>⚠ {{ error }}</p>
+                {% endfor %}
             </div>
         {% endif %}
 
-        <form method="post">
+        <form method="post" id="product-form">
             {% csrf_token %}
 
-            <label for="name">Nome do produto</label>
-            <input type="text" name="name" id="name" required placeholder="Ex: Porção de batata">
+            <section class="form-section primary-fields" aria-labelledby="basic-data-title">
+                <h2 id="basic-data-title">Dados principais</h2>
 
-            <label for="category">Categoria</label>
-            <input type="text" name="category" id="category" placeholder="Ex: Porções, Bebidas, Destilados">
-
-            <label for="product_type">Tipo de produto</label>
-            <select name="product_type" id="product_type">
-                {% for value, label in product_types %}
-                    <option value="{{ value }}">{{ label }}</option>
+                <label for="{{ form.name.id_for_label }}">Nome do produto</label>
+                {{ form.name }}
+                {% for error in form.name.errors %}
+                    <div class="field-error" role="alert">⚠ {{ error }}</div>
                 {% endfor %}
-            </select>
 
-            <label for="unit">Unidade</label>
-            <select name="unit" id="unit" required>
-                <option value="">Selecione uma unidade</option>
-                {% for unit in units %}
-                    <option value="{{ unit.id }}">{{ unit.name }} - {{ unit.symbol }}</option>
+                <label for="{{ form.sale_price.id_for_label }}">Preço de venda</label>
+                {{ form.sale_price }}
+                {% for error in form.sale_price.errors %}
+                    <div class="field-error" role="alert">⚠ {{ error }}</div>
                 {% endfor %}
-            </select>
+                <div class="help">Use ponto ou vírgula. Ex: 28,00</div>
 
-            <label for="sale_price">Preço de venda</label>
-            <input type="text" name="sale_price" id="sale_price" required placeholder="Ex: 28.00">
-            <div class="help">Use ponto ou vírgula. Ex: 28,00</div>
+                <label for="{{ form.sale_form.id_for_label }}">Forma de venda</label>
+                {{ form.sale_form }}
+                {% for error in form.sale_form.errors %}
+                    <div class="field-error" role="alert">⚠ {{ error }}</div>
+                {% endfor %}
+            </section>
 
-            <label for="minimum_quantity">Estoque mínimo</label>
-            <input type="text" name="minimum_quantity" id="minimum_quantity" placeholder="Ex: 5">
-            <div class="help">Quando o estoque ficar igual ou abaixo disso, aparece como baixo.</div>
+            <details class="advanced-settings" {% if advanced_errors %}open{% endif %}>
+                <summary>Configurações avançadas <span>opcional</span></summary>
 
-            <div class="checkbox-row">
-                <input type="checkbox" name="active" id="active" checked>
-                <label for="active">Produto ativo</label>
-            </div>
+                <div class="advanced-content">
+                    <div class="field-grid">
+                        <div>
+                            <label for="{{ form.inventory_role.id_for_label }}">Papel do produto</label>
+                            {{ form.inventory_role }}
+                            {% for error in form.inventory_role.errors %}
+                                <div class="field-error" role="alert">⚠ {{ error }}</div>
+                            {% endfor %}
+                        </div>
 
-            <button type="submit" {% if not units %}disabled{% endif %}>
-                Salvar produto
-            </button>
+                        <div>
+                            <label for="{{ form.stock_dimension.id_for_label }}">Dimensão do estoque</label>
+                            {{ form.stock_dimension }}
+                            {% for error in form.stock_dimension.errors %}
+                                <div class="field-error" role="alert">⚠ {{ error }}</div>
+                            {% endfor %}
+                        </div>
+                    </div>
+
+                    <label for="{{ form.category.id_for_label }}">Categoria</label>
+                    {{ form.category }}
+                    {% for error in form.category.errors %}
+                        <div class="field-error" role="alert">⚠ {{ error }}</div>
+                    {% endfor %}
+
+                    <label for="{{ form.unit_description.id_for_label }}">Descrição comercial da unidade</label>
+                    {{ form.unit_description }}
+                    {% for error in form.unit_description.errors %}
+                        <div class="field-error" role="alert">⚠ {{ error }}</div>
+                    {% endfor %}
+
+                    <div class="field-grid">
+                        <div data-sale-form-field="dose">
+                            <label for="{{ form.dose_ml.id_for_label }}">Volume da dose (opcional)</label>
+                            {{ form.dose_ml }}
+                            {% for error in form.dose_ml.errors %}
+                                <div class="field-error" role="alert">⚠ {{ error }}</div>
+                            {% endfor %}
+                        </div>
+                        <div data-sale-form-field="portion">
+                            <label for="{{ form.portion_g.id_for_label }}">Peso da porção (opcional)</label>
+                            {{ form.portion_g }}
+                            {% for error in form.portion_g.errors %}
+                                <div class="field-error" role="alert">⚠ {{ error }}</div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    <div class="help">Essas medidas são opcionais e nunca bloqueiam venda quando ausentes.</div>
+
+                    <div data-preparation-field>
+                        <label for="{{ form.preparation_mode.id_for_label }}">Modo de preparo</label>
+                        {{ form.preparation_mode }}
+                        {% for error in form.preparation_mode.errors %}
+                            <div class="field-error" role="alert">⚠ {{ error }}</div>
+                        {% endfor %}
+                    </div>
+
+                    <div class="field-grid">
+                        <div>
+                            <label for="{{ form.product_type.id_for_label }}">Tipo legado no fluxo atual</label>
+                            {{ form.product_type }}
+                            {% for error in form.product_type.errors %}
+                                <div class="field-error" role="alert">⚠ {{ error }}</div>
+                            {% endfor %}
+                            <div class="help">Mantido para compatibilidade com o PDV atual.</div>
+                        </div>
+
+                        <div>
+                            <label for="{{ form.unit.id_for_label }}">Unidade legada</label>
+                            {{ form.unit }}
+                            {% for error in form.unit.errors %}
+                                <div class="field-error" role="alert">⚠ {{ error }}</div>
+                            {% endfor %}
+                            <div class="help">Se ficar vazia, o sistema cria ou reutiliza a unidade-base adequada.</div>
+                        </div>
+                    </div>
+
+                    <label for="{{ form.minimum_quantity.id_for_label }}">Estoque mínimo</label>
+                    {{ form.minimum_quantity }}
+                    {% for error in form.minimum_quantity.errors %}
+                        <div class="field-error" role="alert">⚠ {{ error }}</div>
+                    {% endfor %}
+
+                    <div class="checkbox-row">
+                        <input type="hidden" name="active_present" value="1">
+                        {{ form.active }}
+                        <label for="{{ form.active.id_for_label }}">Produto ativo</label>
+                    </div>
+                    {% for error in form.active.errors %}
+                        <div class="field-error" role="alert">⚠ {{ error }}</div>
+                    {% endfor %}
+
+                    <section class="components-section" aria-labelledby="components-title">
+                        <div class="components-heading">
+                            <div>
+                                <h2 id="components-title">Composição / ingredientes</h2>
+                                <p>Opcional e progressiva. Cadastre somente o que já conhece.</p>
+                            </div>
+                            <button type="button" class="secondary-button" id="add-component">
+                                + Adicionar ingrediente
+                            </button>
+                        </div>
+
+                        {{ component_formset.management_form }}
+                        {% for error in component_formset.non_form_errors %}
+                            <div class="field-error" role="alert">⚠ {{ error }}</div>
+                        {% endfor %}
+                        <div id="component-rows">
+                            {% for component_form in component_formset %}
+                                <div class="component-row{% if component_form.errors %} has-errors{% endif %}">
+                                    {% for error in component_form.non_field_errors %}
+                                        <div class="component-non-field-error field-error" role="alert">⚠ {{ error }}</div>
+                                    {% endfor %}
+                                    <div>
+                                        <label for="{{ component_form.ingredient.id_for_label }}">Ingrediente</label>
+                                        {{ component_form.ingredient }}
+                                        {% for error in component_form.ingredient.errors %}
+                                            <div class="field-error" role="alert">⚠ {{ error }}</div>
+                                        {% endfor %}
+                                    </div>
+                                    <div>
+                                        <label for="{{ component_form.quantity.id_for_label }}">Quantidade</label>
+                                        {{ component_form.quantity }}
+                                        {% for error in component_form.quantity.errors %}
+                                            <div class="field-error" role="alert">⚠ {{ error }}</div>
+                                        {% endfor %}
+                                    </div>
+                                    <div>
+                                        <label for="{{ component_form.unit.id_for_label }}">Unidade</label>
+                                        {{ component_form.unit }}
+                                        {% for error in component_form.unit.errors %}
+                                            <div class="field-error" role="alert">⚠ {{ error }}</div>
+                                        {% endfor %}
+                                    </div>
+                                    <div class="component-actions">
+                                        <span class="delete-field">{{ component_form.DELETE }}</span>
+                                        <button type="button" class="remove-component">Remover</button>
+                                    </div>
+                                </div>
+                            {% endfor %}
+                        </div>
+
+                        <template id="empty-component-form">
+                            <div class="component-row">
+                                <div>
+                                    <label for="{{ component_formset.empty_form.ingredient.id_for_label }}">Ingrediente</label>
+                                    {{ component_formset.empty_form.ingredient }}
+                                </div>
+                                <div>
+                                    <label for="{{ component_formset.empty_form.quantity.id_for_label }}">Quantidade</label>
+                                    {{ component_formset.empty_form.quantity }}
+                                </div>
+                                <div>
+                                    <label for="{{ component_formset.empty_form.unit.id_for_label }}">Unidade</label>
+                                    {{ component_formset.empty_form.unit }}
+                                </div>
+                                <div class="component-actions">
+                                    <span class="delete-field">{{ component_formset.empty_form.DELETE }}</span>
+                                    <button type="button" class="remove-component">Remover</button>
+                                </div>
+                            </div>
+                        </template>
+                    </section>
+                </div>
+            </details>
+
+            <button type="submit">Salvar produto</button>
         </form>
     </div>
+{% endblock %}
+
+{% block extra_js %}
+    <script src="{% static 'js/product_form.js' %}"></script>
 {% endblock %}

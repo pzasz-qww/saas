@@ -36,11 +36,11 @@ from accounts.permissions import (
 
 from .category_names import clean_category_name
 from .category_services import resolve_category
-from .models import Product, StockEntry, StockMovement, Unit
+from .forms import ProductComponentFormSet, ProductCreateForm
+from .models import Product, ProductComponent, StockEntry, Unit
 from .services import (
     StockServiceError,
-    apply_negative_adjustment,
-    apply_positive_adjustment,
+    apply_stock_count,
 )
 
 
@@ -54,14 +54,21 @@ def parse_decimal(value):
         return None
 
     try:
-        return Decimal(value)
+        parsed = Decimal(value)
     except InvalidOperation:
         return None
 
+    return parsed if parsed.is_finite() else None
+
+
+def format_quantity(value):
+    formatted = f"{value or Decimal('0'):.6f}".rstrip("0").rstrip(".")
+    return formatted.replace(".", ",")
+
 
 def _get_stock_products_queryset(company):
-    current_stock_field = DecimalField(max_digits=12, decimal_places=2)
-    average_cost_field = DecimalField(max_digits=14, decimal_places=4)
+    current_stock_field = DecimalField(max_digits=20, decimal_places=6)
+    average_cost_field = DecimalField(max_digits=30, decimal_places=10)
     stock_cost_expression = ExpressionWrapper(
         F("stock_entries__remaining_quantity")
         * F("stock_entries__total_cost")
@@ -325,7 +332,7 @@ def stock_report_pdf(request):
         )
 
         recommended_stock = (
-            f"{product.minimum_quantity:.2f}".replace(".", ",")
+            format_quantity(product.minimum_quantity)
             if product.minimum_quantity > 0
             else "-"
         )
@@ -341,7 +348,7 @@ def stock_report_pdf(request):
                 cell_style,
             ),
             escape(product.unit.symbol),
-            f"{current_stock:.2f}".replace(".", ","),
+            format_quantity(current_stock),
             recommended_stock,
             status,
             f"R$ {product.sale_price:.2f}".replace(".", ","),
@@ -392,6 +399,67 @@ def stock_report_pdf(request):
     return response
 
 
+PRODUCT_ADVANCED_FIELDS = {
+    "category",
+    "product_type",
+    "unit",
+    "inventory_role",
+    "stock_dimension",
+    "unit_description",
+    "dose_ml",
+    "portion_g",
+    "preparation_mode",
+    "minimum_quantity",
+    "active",
+}
+
+
+def _add_validation_error(target_form, error):
+    if hasattr(error, "message_dict"):
+        for field_name, field_messages in error.message_dict.items():
+            target_field = field_name if field_name in target_form.fields else None
+            for field_message in field_messages:
+                target_form.add_error(target_field, field_message)
+        return
+
+    for field_message in error.messages:
+        target_form.add_error(None, field_message)
+
+
+def _render_product_create(
+    request,
+    *,
+    company,
+    form,
+    component_formset,
+    submission_failed=False,
+):
+    advanced_errors = any(
+        field_name in form.errors for field_name in PRODUCT_ADVANCED_FIELDS
+    )
+    advanced_errors = advanced_errors or any(
+        bool(component_errors) for component_errors in component_formset.errors
+    )
+    advanced_errors = advanced_errors or bool(component_formset.non_form_errors())
+
+    return render(
+        request,
+        "products/product_form.html",
+        {
+            "form": form,
+            "component_formset": component_formset,
+            "submission_failed": submission_failed,
+            "advanced_errors": advanced_errors,
+            "units": Unit.objects.filter(company=company).order_by("name"),
+            "product_types": Product.PRODUCT_TYPES,
+            "inventory_roles": Product.INVENTORY_ROLES,
+            "sale_forms": Product.SALE_FORMS,
+            "stock_dimensions": Product.STOCK_DIMENSIONS,
+            "preparation_modes": Product.PREPARATION_MODES,
+        },
+    )
+
+
 @login_required
 @company_required
 def product_create(request):
@@ -400,71 +468,117 @@ def product_create(request):
         return redirect("products:stock_dashboard")
 
     company = request.current_company
-
-    units = Unit.objects.filter(company=company).order_by("name")
+    form = ProductCreateForm(
+        request.POST if request.method == "POST" else None,
+        company=company,
+    )
+    components_submitted = (
+        request.method == "POST" and "components-TOTAL_FORMS" in request.POST
+    )
+    component_formset = ProductComponentFormSet(
+        request.POST if components_submitted else None,
+        prefix="components",
+        form_kwargs={"company": company},
+    )
 
     if request.method == "POST":
-        name = request.POST.get("name", "").strip()
-        category_text = clean_category_name(request.POST.get("category", ""))
-        product_type = request.POST.get("product_type", "sale")
-        unit_id = request.POST.get("unit")
-        sale_price = parse_decimal(request.POST.get("sale_price"))
-        minimum_quantity = parse_decimal(request.POST.get("minimum_quantity"))
-        active = request.POST.get("active") == "on"
-
-        if not name:
-            messages.warning(request, "Informe o nome do produto.")
-            return redirect("products:product_create")
-
-        valid_product_types = {value for value, _label in Product.PRODUCT_TYPES}
-        if product_type not in valid_product_types:
-            messages.warning(request, "Os dados informados para o produto são inválidos.")
-            return redirect("products:product_create")
-
         if "category_id" in request.POST:
             messages.warning(request, "Os dados informados para o produto são inválidos.")
             return redirect("products:product_create")
 
-        if sale_price is None or sale_price < 0:
-            messages.warning(request, "Informe um preço de venda válido.")
-            return redirect("products:product_create")
+        posted_unit_id = request.POST.get("unit")
+        if posted_unit_id:
+            get_object_or_404(Unit, id=posted_unit_id, company=company)
 
-        if minimum_quantity is None or minimum_quantity < 0:
-            minimum_quantity = Decimal("0.00")
+        forms_are_valid = form.is_valid()
+        components_are_valid = (
+            component_formset.is_valid() if components_submitted else True
+        )
+        if not forms_are_valid or not components_are_valid:
+            return _render_product_create(
+                request,
+                company=company,
+                form=form,
+                component_formset=component_formset,
+                submission_failed=True,
+            )
 
-        unit = get_object_or_404(Unit, id=unit_id, company=company)
+        data = form.cleaned_data
+        name = data["name"].strip()
+        category_text = clean_category_name(data.get("category"))
 
+        validation_target = form
         try:
             with transaction.atomic():
                 category = resolve_category(
                     company=company,
                     raw_name=category_text,
                 )
-                Product.objects.create(
+                unit = data.get("unit")
+                if unit is None:
+                    legacy_units = {
+                        "count": ("Unidade", "un"),
+                        "weight": ("Grama", "g"),
+                        "volume": ("Mililitro", "mL"),
+                    }
+                    unit_name, unit_symbol = legacy_units[data["stock_dimension"]]
+                    unit, _created = Unit.objects.get_or_create(
+                        company=company,
+                        symbol=unit_symbol,
+                        defaults={"name": unit_name},
+                    )
+
+                product = Product.objects.create(
                     company=company,
                     name=name,
                     category=category,
                     category_legacy=category_text or None,
-                    product_type=product_type,
+                    product_type=data["product_type"],
+                    inventory_role=data["inventory_role"],
+                    sale_form=data["sale_form"],
+                    stock_dimension=data["stock_dimension"],
+                    unit_description=data.get("unit_description", "").strip(),
+                    dose_ml=data.get("dose_ml"),
+                    portion_g=data.get("portion_g"),
+                    preparation_mode=data.get("preparation_mode"),
                     unit=unit,
-                    sale_price=sale_price,
-                    minimum_quantity=minimum_quantity,
-                    active=active,
+                    sale_price=data["sale_price"],
+                    minimum_quantity=data["minimum_quantity"],
+                    active=data["active"],
                 )
-        except ValidationError:
-            messages.warning(request, "Os dados informados para o produto são inválidos.")
-            return redirect("products:product_create")
+
+                if components_submitted:
+                    for component_form in component_formset:
+                        component_data = component_form.cleaned_data
+                        if not component_data or component_data.get("DELETE"):
+                            continue
+
+                        validation_target = component_form
+                        ProductComponent.objects.create(
+                            company=company,
+                            product=product,
+                            ingredient=component_data["ingredient"],
+                            quantity=component_data["quantity"],
+                            unit=component_data["unit"],
+                        )
+        except ValidationError as error:
+            _add_validation_error(validation_target, error)
+            return _render_product_create(
+                request,
+                company=company,
+                form=form,
+                component_formset=component_formset,
+                submission_failed=True,
+            )
 
         messages.success(request, f"Produto cadastrado: {name}.")
         return redirect("products:stock_dashboard")
 
-    return render(
+    return _render_product_create(
         request,
-        "products/product_form.html",
-        {
-            "units": units,
-            "product_types": Product.PRODUCT_TYPES,
-        },
+        company=company,
+        form=form,
+        component_formset=component_formset,
     )
 
 
@@ -523,17 +637,24 @@ def stock_entry_create(request):
 
             total_cost = package_quantity * package_cost
 
-        StockEntry.objects.create(
-            company=company,
-            product=product,
-            entry_mode=entry_mode,
-            total_cost=total_cost,
-            quantity_added=quantity_added,
-            package_quantity=package_quantity,
-            package_cost=package_cost,
-            notes=notes,
-            created_by=request.user,
-        )
+        with transaction.atomic():
+            product = get_object_or_404(
+                Product.objects.select_for_update(),
+                id=product.pk,
+                company=company,
+                active=True,
+            )
+            StockEntry.objects.create(
+                company=company,
+                product=product,
+                entry_mode=entry_mode,
+                total_cost=total_cost,
+                quantity_added=quantity_added,
+                package_quantity=package_quantity,
+                package_cost=package_cost,
+                notes=notes,
+                created_by=request.user,
+            )
 
         messages.success(
             request,
@@ -583,69 +704,35 @@ def stock_count_adjust(request):
             messages.warning(request, "Informe uma contagem real válida.")
             return redirect("products:stock_count_adjust")
 
-        expected_quantity = product.current_stock
-        difference = real_quantity - expected_quantity
-
-        StockMovement.objects.create(
-            company=company,
-            product=product,
-            movement_type="stock_count",
-            quantity=real_quantity,
-            sale_value=Decimal("0.00"),
-            cost_value=real_quantity * product.average_cost,
-            reason="Conferência de estoque",
-            notes=(
-                f"Estoque esperado: {expected_quantity}. "
-                f"Contagem real: {real_quantity}. "
-                f"Diferença: {difference}. "
-                f"{notes}"
-            ),
-            created_by=request.user,
-        )
-
-        if difference == 0:
-            messages.success(
-                request,
-                f"Conferência registrada para {product.name}. Sem diferença no estoque.",
-            )
-            return redirect("products:stock_dashboard")
-
-        if difference > 0:
-            try:
-                apply_positive_adjustment(
-                    company=company,
-                    product=product,
-                    quantity=difference,
-                    cost_value=difference * product.average_cost,
-                    reason="Ajuste positivo por conferência",
-                    notes=notes,
-                    created_by=request.user,
-                )
-            except StockServiceError as error:
-                messages.warning(request, str(error))
-                return redirect("products:stock_count_adjust")
-
-            messages.success(
-                request,
-                f"{product.name}: ajuste positivo de {difference} {product.unit} aplicado.",
-            )
-
-            return redirect("products:stock_dashboard")
-
-        quantity_to_remove = abs(difference)
-
         try:
-            apply_negative_adjustment(
+            result = apply_stock_count(
                 company=company,
                 product=product,
-                quantity=quantity_to_remove,
-                reason="Ajuste negativo por conferência",
+                real_quantity=real_quantity,
                 notes=notes,
                 created_by=request.user,
             )
         except StockServiceError as error:
             messages.warning(request, str(error))
             return redirect("products:stock_count_adjust")
+
+        if result.difference == 0:
+            messages.success(
+                request,
+                f"Conferência registrada para {product.name}. Sem diferença no estoque.",
+            )
+            return redirect("products:stock_dashboard")
+
+        if result.difference > 0:
+            messages.success(
+                request,
+                f"{product.name}: ajuste positivo de {result.difference} "
+                f"{product.unit} aplicado.",
+            )
+
+            return redirect("products:stock_dashboard")
+
+        quantity_to_remove = abs(result.difference)
 
         messages.warning(
             request,

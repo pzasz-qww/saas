@@ -3,11 +3,16 @@ from decimal import Decimal
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
-from django.db.models import Q, Sum
+from django.db.models import F, Q, Sum
 
 from companies.models import Company
 
 from .category_names import clean_category_name, normalize_category_name
+from .quantities import (
+    QUANTITY_UNIT_CHOICES,
+    QuantityConversionError,
+    normalize_quantity,
+)
 
 
 class Unit(models.Model):
@@ -132,6 +137,25 @@ class Product(models.Model):
         ("internal_use", "Uso interno"),
         ("both", "Venda e uso interno"),
     ]
+    INVENTORY_ROLES = [
+        ("direct", "Venda direta"),
+        ("input", "Insumo"),
+        ("prepared", "Preparado"),
+    ]
+    SALE_FORMS = [
+        ("unit", "Unidade"),
+        ("dose", "Dose"),
+        ("portion", "Porção"),
+    ]
+    STOCK_DIMENSIONS = [
+        ("count", "Contagem"),
+        ("weight", "Peso"),
+        ("volume", "Volume"),
+    ]
+    PREPARATION_MODES = [
+        ("on_demand", "Sob demanda"),
+        ("pre_portioned", "Pré-porcionado"),
+    ]
     STOCK_STATUS_LABELS = {
         "empty": "Esgotado",
         "critical": "Crítico",
@@ -152,6 +176,41 @@ class Product(models.Model):
     )
     product_type = models.CharField(max_length=30, choices=PRODUCT_TYPES, default="sale")
 
+    inventory_role = models.CharField(
+        max_length=20,
+        choices=INVENTORY_ROLES,
+        default="direct",
+    )
+    sale_form = models.CharField(
+        max_length=20,
+        choices=SALE_FORMS,
+        default="unit",
+    )
+    stock_dimension = models.CharField(
+        max_length=20,
+        choices=STOCK_DIMENSIONS,
+        default="count",
+    )
+    unit_description = models.CharField(max_length=120, blank=True, default="")
+    dose_ml = models.DecimalField(
+        max_digits=20,
+        decimal_places=6,
+        blank=True,
+        null=True,
+    )
+    portion_g = models.DecimalField(
+        max_digits=20,
+        decimal_places=6,
+        blank=True,
+        null=True,
+    )
+    preparation_mode = models.CharField(
+        max_length=20,
+        choices=PREPARATION_MODES,
+        blank=True,
+        null=True,
+    )
+
     unit = models.ForeignKey(Unit, on_delete=models.PROTECT)
 
     sale_price = models.DecimalField(
@@ -164,8 +223,8 @@ class Product(models.Model):
     active = models.BooleanField(default=True)
 
     minimum_quantity = models.DecimalField(
-        max_digits=10,
-        decimal_places=2,
+        max_digits=20,
+        decimal_places=6,
         default=0,
         help_text="Quantidade mínima para alerta de estoque baixo.",
     )
@@ -176,6 +235,29 @@ class Product(models.Model):
         verbose_name = "Produto"
         verbose_name_plural = "Produtos"
         ordering = ["name"]
+        constraints = [
+            models.CheckConstraint(
+                condition=Q(dose_ml__isnull=True) | Q(dose_ml__gt=0),
+                name="product_dose_ml_positive",
+            ),
+            models.CheckConstraint(
+                condition=Q(portion_g__isnull=True) | Q(portion_g__gt=0),
+                name="product_portion_g_positive",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    Q(
+                        inventory_role="prepared",
+                        preparation_mode__in=("on_demand", "pre_portioned"),
+                    )
+                    | (
+                        ~Q(inventory_role="prepared")
+                        & Q(preparation_mode__isnull=True)
+                    )
+                ),
+                name="product_preparation_mode_domain",
+            ),
+        ]
 
     def clean(self):
         super().clean()
@@ -184,6 +266,51 @@ class Product(models.Model):
         valid_product_types = {value for value, _label in self.PRODUCT_TYPES}
         if self.product_type not in valid_product_types:
             errors["product_type"] = "Selecione um tipo de produto válido."
+
+        choice_fields = (
+            ("inventory_role", self.INVENTORY_ROLES, "papel do produto"),
+            ("sale_form", self.SALE_FORMS, "forma de venda"),
+            ("stock_dimension", self.STOCK_DIMENSIONS, "dimensão de estoque"),
+        )
+        for field_name, choices, label in choice_fields:
+            valid_values = {value for value, _label in choices}
+            if getattr(self, field_name) not in valid_values:
+                errors[field_name] = f"Selecione um(a) {label} válido(a)."
+
+        valid_preparation_modes = {
+            value for value, _label in self.PREPARATION_MODES
+        }
+        if self.preparation_mode == "":
+            self.preparation_mode = None
+
+        if self.inventory_role == "prepared":
+            if self.preparation_mode not in valid_preparation_modes:
+                errors["preparation_mode"] = (
+                    "Selecione como o produto preparado afeta o estoque."
+                )
+        elif self.preparation_mode not in (None, ""):
+            errors["preparation_mode"] = (
+                "O modo de preparo só se aplica a produtos preparados."
+            )
+
+        for field_name, label in (
+            ("dose_ml", "O volume da dose"),
+            ("portion_g", "O peso da porção"),
+        ):
+            value = getattr(self, field_name)
+            if value is None:
+                continue
+
+            try:
+                value = value if isinstance(value, Decimal) else Decimal(str(value))
+            except (ArithmeticError, TypeError, ValueError):
+                errors[field_name] = f"{label} deve ser um número válido."
+                continue
+
+            if not value.is_finite() or value <= 0:
+                errors[field_name] = f"{label} deve ser positivo."
+            else:
+                setattr(self, field_name, value)
 
         if self.company_id is not None and self.unit_id is not None:
             unit_company_id = (
@@ -320,6 +447,154 @@ class Product(models.Model):
         return self.name
 
 
+class ProductComponent(models.Model):
+    company = models.ForeignKey(
+        Company,
+        on_delete=models.CASCADE,
+        related_name="product_components",
+    )
+    product = models.ForeignKey(
+        Product,
+        on_delete=models.CASCADE,
+        related_name="components",
+    )
+    ingredient = models.ForeignKey(
+        Product,
+        on_delete=models.PROTECT,
+        related_name="used_in_components",
+    )
+    quantity = models.DecimalField(max_digits=20, decimal_places=6)
+    unit = models.CharField(max_length=10, choices=QUANTITY_UNIT_CHOICES)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "Componente do produto"
+        verbose_name_plural = "Componentes dos produtos"
+        ordering = ("product_id", "id")
+        constraints = [
+            models.UniqueConstraint(
+                fields=("product", "ingredient"),
+                name="uniq_product_component_ingredient",
+            ),
+            models.CheckConstraint(
+                condition=Q(quantity__gt=0),
+                name="product_component_quantity_positive",
+            ),
+            models.CheckConstraint(
+                condition=~Q(product=F("ingredient")),
+                name="product_component_not_self",
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=("company", "product"),
+                name="component_company_product_idx",
+            ),
+        ]
+
+    def clean(self):
+        super().clean()
+        errors = {}
+
+        product_data = None
+        if self.product_id is not None:
+            product_data = (
+                Product.objects.filter(pk=self.product_id)
+                .values("company_id", "inventory_role")
+                .first()
+            )
+
+        ingredient_data = None
+        if self.ingredient_id is not None:
+            ingredient_data = (
+                Product.objects.filter(pk=self.ingredient_id)
+                .values("company_id", "inventory_role", "stock_dimension")
+                .first()
+            )
+
+        if self.product_id is not None and self.product_id == self.ingredient_id:
+            errors["ingredient"] = "O produto não pode ser ingrediente de si mesmo."
+
+        if product_data is not None:
+            if self.company_id is None:
+                self.company_id = product_data["company_id"]
+            elif self.company_id != product_data["company_id"]:
+                errors["product"] = "O produto deve pertencer à mesma empresa."
+
+            if product_data["inventory_role"] != "prepared":
+                errors["product"] = (
+                    "Somente produtos preparados podem possuir composição."
+                )
+
+        if ingredient_data is not None:
+            expected_company_id = (
+                product_data["company_id"] if product_data is not None else self.company_id
+            )
+            if ingredient_data["company_id"] != expected_company_id:
+                errors["ingredient"] = (
+                    "O ingrediente deve pertencer à mesma empresa do produto."
+                )
+            elif ingredient_data["inventory_role"] == "prepared":
+                errors["ingredient"] = (
+                    "Produtos preparados não podem ser usados como ingredientes."
+                )
+
+        normalized = None
+        if self.quantity is not None and self.unit:
+            try:
+                normalized = normalize_quantity(self.quantity, self.unit)
+            except QuantityConversionError as error:
+                errors["quantity"] = str(error)
+
+        if normalized is not None and ingredient_data is not None:
+            if normalized.dimension != ingredient_data["stock_dimension"]:
+                errors["unit"] = (
+                    "A unidade informada é incompatível com a dimensão de estoque "
+                    "do ingrediente."
+                )
+            else:
+                self.quantity = normalized.quantity
+                self.unit = normalized.base_unit
+
+        if self.pk is not None:
+            original = (
+                type(self).objects.filter(pk=self.pk)
+                .values("company_id", "product_id")
+                .first()
+            )
+            if original is not None:
+                if original["company_id"] != self.company_id:
+                    errors["company"] = (
+                        "A empresa de uma composição existente não pode ser alterada."
+                    )
+                if original["product_id"] != self.product_id:
+                    errors["product"] = (
+                        "O produto de uma composição existente não pode ser alterado."
+                    )
+
+        if errors:
+            raise ValidationError(errors)
+
+    def save(self, *args, **kwargs):
+        if isinstance(self.quantity, float):
+            raise ValidationError(
+                {"quantity": "A quantidade deve ser informada sem usar float."}
+            )
+
+        if self.company_id is None and self.product_id is not None:
+            self.company_id = (
+                Product.objects.filter(pk=self.product_id)
+                .values_list("company_id", flat=True)
+                .first()
+            )
+
+        self.full_clean()
+        return super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"{self.product}: {self.ingredient} ({self.quantity} {self.unit})"
+
+
 class StockEntry(models.Model):
     ENTRY_MODES = [
         ("simple", "Entrada simples"),
@@ -337,36 +612,36 @@ class StockEntry(models.Model):
     entry_mode = models.CharField(max_length=20, choices=ENTRY_MODES, default="simple")
 
     total_cost = models.DecimalField(
-        max_digits=10,
-        decimal_places=2,
+        max_digits=20,
+        decimal_places=10,
         default=0,
         help_text="Valor total investido. Exemplo: R$ 150 em batata.",
     )
 
     quantity_added = models.DecimalField(
-        max_digits=10,
-        decimal_places=2,
+        max_digits=20,
+        decimal_places=6,
         help_text="Quantidade gerada. Exemplo: 30 porções ou 24 unidades.",
     )
 
     remaining_quantity = models.DecimalField(
-        max_digits=10,
-        decimal_places=2,
+        max_digits=20,
+        decimal_places=6,
         blank=True,
         null=True,
     )
 
     package_quantity = models.DecimalField(
-        max_digits=10,
-        decimal_places=2,
+        max_digits=20,
+        decimal_places=6,
         blank=True,
         null=True,
         help_text="Opcional. Exemplo: 6 caixas, 3 sacos.",
     )
 
     package_cost = models.DecimalField(
-        max_digits=10,
-        decimal_places=2,
+        max_digits=20,
+        decimal_places=10,
         blank=True,
         null=True,
         help_text="Opcional. Exemplo: R$ 25 por saco.",
@@ -470,7 +745,7 @@ class StockMovement(models.Model):
     )
 
     movement_type = models.CharField(max_length=30, choices=MOVEMENT_TYPES)
-    quantity = models.DecimalField(max_digits=10, decimal_places=2)
+    quantity = models.DecimalField(max_digits=20, decimal_places=6)
 
     sale_value = models.DecimalField(
         max_digits=10,
@@ -480,8 +755,8 @@ class StockMovement(models.Model):
     )
 
     cost_value = models.DecimalField(
-        max_digits=10,
-        decimal_places=2,
+        max_digits=20,
+        decimal_places=10,
         blank=True,
         null=True,
     )

@@ -4,7 +4,14 @@ from django.contrib import admin
 from accounts.permissions import get_user_company
 
 from .category_names import normalize_category_name
-from .models import Category, Product, StockEntry, StockMovement, Unit
+from .models import (
+    Category,
+    Product,
+    ProductComponent,
+    StockEntry,
+    StockMovement,
+    Unit,
+)
 
 
 class CompanyScopedAdminMixin:
@@ -252,6 +259,9 @@ class ProductAdmin(CompanyScopedAdminMixin, admin.ModelAdmin):
         "name",
         "company",
         "category",
+        "inventory_role",
+        "sale_form",
+        "stock_dimension",
         "product_type",
         "unit",
         "sale_price",
@@ -273,6 +283,9 @@ class ProductAdmin(CompanyScopedAdminMixin, admin.ModelAdmin):
     list_filter = (
         "company",
         ("category", admin.RelatedOnlyFieldListFilter),
+        "inventory_role",
+        "sale_form",
+        "stock_dimension",
         "product_type",
         "active",
         ("unit", admin.RelatedOnlyFieldListFilter),
@@ -305,6 +318,21 @@ class ProductAdmin(CompanyScopedAdminMixin, admin.ModelAdmin):
                     "unit",
                     "sale_price",
                 )
+            },
+        ),
+        (
+            "Domínio de estoque e venda",
+            {
+                "fields": (
+                    "inventory_role",
+                    "sale_form",
+                    "stock_dimension",
+                    "unit_description",
+                    "dose_ml",
+                    "portion_g",
+                    "preparation_mode",
+                ),
+                "classes": ("collapse",),
             },
         ),
         (
@@ -386,6 +414,44 @@ class ProductAdmin(CompanyScopedAdminMixin, admin.ModelAdmin):
 
     def has_delete_permission(self, request, obj=None):
         return False
+
+
+@admin.register(ProductComponent)
+class ProductComponentAdmin(CompanyScopedAdminMixin, admin.ModelAdmin):
+    list_display = (
+        "product",
+        "ingredient",
+        "quantity",
+        "unit",
+        "company",
+        "created_at",
+    )
+    search_fields = (
+        "product__name",
+        "ingredient__name",
+        "company__name",
+    )
+    list_filter = ("company", "unit", "created_at")
+    list_select_related = ("company", "product", "ingredient")
+    readonly_fields = ("created_at",)
+
+    def formfield_for_foreignkey(self, db_field, request, **kwargs):
+        if not request.user.is_superuser and db_field.name in {"product", "ingredient"}:
+            company = get_user_company(request.user)
+            queryset = Product.objects.filter(company=company)
+            if db_field.name == "product":
+                queryset = queryset.filter(inventory_role="prepared")
+            else:
+                queryset = queryset.exclude(inventory_role="prepared")
+            kwargs["queryset"] = queryset.order_by("name")
+
+        return super().formfield_for_foreignkey(db_field, request, **kwargs)
+
+    def save_model(self, request, obj, form, change):
+        if not request.user.is_superuser:
+            obj.company = get_user_company(request.user)
+
+        super().save_model(request, obj, form, change)
 
 
 @admin.register(StockEntry)
