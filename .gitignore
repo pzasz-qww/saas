@@ -9,6 +9,12 @@ local_settings.py
 db.sqlite3
 media/
 staticfiles/
+data/
+logs/
+backups/
+config/portable.env
+config/portable_secret_key.txt
+static/admin/
 
 # Ambiente virtual
 venv/

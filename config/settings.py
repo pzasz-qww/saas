@@ -32,8 +32,47 @@ def env_flag(name, default=False):
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
-IS_PRODUCTION = env_flag("RENDER") or env_flag("PRODUCTION")
-DEBUG = env_flag("DEBUG", default=not IS_PRODUCTION)
+legacy_production_environment = env_flag("RENDER") or env_flag("PRODUCTION")
+configured_deployment_mode = os.getenv("DEPLOYMENT_MODE")
+DEPLOYMENT_MODE = (
+    configured_deployment_mode.strip().lower()
+    if configured_deployment_mode
+    else ("cloud" if legacy_production_environment else "development")
+)
+
+SUPPORTED_DEPLOYMENT_MODES = {"cloud", "development", "portable"}
+if DEPLOYMENT_MODE not in SUPPORTED_DEPLOYMENT_MODES:
+    supported_modes = ", ".join(sorted(SUPPORTED_DEPLOYMENT_MODES))
+    raise ImproperlyConfigured(
+        f"DEPLOYMENT_MODE inválido. Use um destes valores: {supported_modes}."
+    )
+
+IS_PRODUCTION = DEPLOYMENT_MODE == "cloud"
+IS_PORTABLE = DEPLOYMENT_MODE == "portable"
+DEBUG = (
+    env_flag("DEBUG", default=True)
+    if DEPLOYMENT_MODE == "development"
+    else False
+)
+
+PORTABLE_ROOT = Path(
+    os.getenv("PORTABLE_ROOT", BASE_DIR)
+).expanduser().resolve()
+PORTABLE_DATA_DIR = PORTABLE_ROOT / "data"
+PORTABLE_MEDIA_DIR = PORTABLE_ROOT / "media"
+PORTABLE_LOG_DIR = PORTABLE_ROOT / "logs"
+PORTABLE_BACKUP_DIR = PORTABLE_ROOT / "backups"
+PORTABLE_CONFIG_DIR = PORTABLE_ROOT / "config"
+
+if IS_PORTABLE:
+    for portable_directory in (
+        PORTABLE_DATA_DIR,
+        PORTABLE_MEDIA_DIR,
+        PORTABLE_LOG_DIR,
+        PORTABLE_BACKUP_DIR,
+        PORTABLE_CONFIG_DIR,
+    ):
+        portable_directory.mkdir(parents=True, exist_ok=True)
 
 if IS_PRODUCTION and DEBUG:
     raise ImproperlyConfigured("DEBUG deve permanecer desativado em produção.")
@@ -42,6 +81,15 @@ SECRET_KEY = os.environ.get(
     "SECRET_KEY",
     "django-insecure-local-dev-key-saas-bar-nao-usar-em-producao",
 )
+
+if IS_PORTABLE and (
+    not os.getenv("SECRET_KEY")
+    or SECRET_KEY.startswith("django-insecure-")
+):
+    raise ImproperlyConfigured(
+        "O modo portable precisa de uma SECRET_KEY persistente. "
+        "Inicie pelo portable_launcher.py ou por iniciar_pdv.bat."
+    )
 
 if IS_PRODUCTION and (
     len(SECRET_KEY) < 50
@@ -68,10 +116,17 @@ ALLOWED_HOSTS = [
     if host.strip()
 ]
 
-if IS_PRODUCTION and "*" in ALLOWED_HOSTS:
+if (IS_PRODUCTION or IS_PORTABLE) and "*" in ALLOWED_HOSTS:
     raise ImproperlyConfigured(
-        "ALLOWED_HOSTS não pode usar '*' em produção."
+        "ALLOWED_HOSTS não pode usar '*' em cloud ou portable."
     )
+
+csrf_trusted_origins_value = os.getenv("CSRF_TRUSTED_ORIGINS", "")
+CSRF_TRUSTED_ORIGINS = [
+    origin.strip()
+    for origin in csrf_trusted_origins_value.split(",")
+    if origin.strip()
+]
 
 
 # Application definitiona
@@ -136,7 +191,17 @@ if IS_PRODUCTION and not database_url:
         "Defina DATABASE_URL para o banco persistente de produção."
     )
 
-if database_url:
+if IS_PORTABLE:
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.sqlite3",
+            "NAME": PORTABLE_DATA_DIR / "db.sqlite3",
+            "OPTIONS": {
+                "timeout": 20,
+            },
+        }
+    }
+elif database_url:
     DATABASES = {
         "default": dj_database_url.parse(
             database_url,
@@ -187,13 +252,29 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
 
 STATIC_URL = '/static/'
-STATIC_ROOT = Path(os.getenv("STATIC_ROOT", BASE_DIR / "staticfiles"))
+SOURCE_STATIC_DIR = BASE_DIR / "static"
 
-staticfiles_backend = (
-    "whitenoise.storage.CompressedManifestStaticFilesStorage"
-    if IS_PRODUCTION
-    else "django.contrib.staticfiles.storage.StaticFilesStorage"
-)
+if IS_PORTABLE:
+    STATIC_ROOT = Path(
+        os.getenv("STATIC_ROOT", PORTABLE_ROOT / "static")
+    ).expanduser().resolve()
+elif os.getenv("STATIC_ROOT"):
+    STATIC_ROOT = Path(os.environ["STATIC_ROOT"]).expanduser().resolve()
+else:
+    STATIC_ROOT = BASE_DIR / "staticfiles"
+
+if IS_PRODUCTION:
+    staticfiles_backend = (
+        "whitenoise.storage.CompressedManifestStaticFilesStorage"
+    )
+elif IS_PORTABLE:
+    staticfiles_backend = (
+        "whitenoise.storage.CompressedStaticFilesStorage"
+    )
+else:
+    staticfiles_backend = (
+        "django.contrib.staticfiles.storage.StaticFilesStorage"
+    )
 
 STORAGES = {
     "default": {
@@ -203,10 +284,20 @@ STORAGES = {
         "BACKEND": staticfiles_backend,
     },
 }
-# Diretório de arquivos estáticos em desenvolvimento
-STATICFILES_DIRS = [
-    BASE_DIR / 'static',
-]
+# No layout atual, static/ já contém os fontes. Quando o código for empacotado
+# em app/, collectstatic copiará esses fontes para static/ na raiz portátil.
+STATICFILES_DIRS = (
+    []
+    if IS_PORTABLE and STATIC_ROOT == SOURCE_STATIC_DIR.resolve()
+    else [SOURCE_STATIC_DIR]
+)
+
+MEDIA_URL = "/media/"
+MEDIA_ROOT = (
+    PORTABLE_MEDIA_DIR
+    if IS_PORTABLE
+    else Path(os.getenv("MEDIA_ROOT", BASE_DIR / "media"))
+)
 
 # Configurações de fuso horário e idioma para o Brasil (opcional, mas recomendado para o bar)
 LANGUAGE_CODE = 'pt-br'
@@ -224,3 +315,47 @@ if IS_PRODUCTION:
     SECURE_HSTS_SECONDS = 31536000
     SECURE_HSTS_INCLUDE_SUBDOMAINS = True
     SECURE_HSTS_PRELOAD = True
+
+if IS_PORTABLE:
+    SECURE_SSL_REDIRECT = False
+    SESSION_COOKIE_SECURE = False
+    CSRF_COOKIE_SECURE = False
+    SECURE_HSTS_SECONDS = 0
+
+    LOGGING = {
+        "version": 1,
+        "disable_existing_loggers": False,
+        "formatters": {
+            "portable": {
+                "format": "{asctime} {levelname} {name}: {message}",
+                "style": "{",
+            },
+        },
+        "handlers": {
+            "console": {
+                "class": "logging.StreamHandler",
+                "formatter": "portable",
+                "level": "INFO",
+            },
+            "portable_file": {
+                "class": "logging.handlers.RotatingFileHandler",
+                "filename": PORTABLE_LOG_DIR / "django.log",
+                "formatter": "portable",
+                "level": "INFO",
+                "maxBytes": 5 * 1024 * 1024,
+                "backupCount": 3,
+                "encoding": "utf-8",
+            },
+        },
+        "root": {
+            "handlers": ["console", "portable_file"],
+            "level": "INFO",
+        },
+        "loggers": {
+            "django.server": {
+                "handlers": ["console", "portable_file"],
+                "level": "INFO",
+                "propagate": False,
+            },
+        },
+    }

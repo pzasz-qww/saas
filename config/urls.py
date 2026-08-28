@@ -1,5 +1,7 @@
+from django.conf import settings
 from django.contrib import admin
-from django.urls import include, path
+from django.urls import include, path, re_path
+from django.views.static import serve
 from django.views.generic import RedirectView
 
 
@@ -32,3 +34,15 @@ urlpatterns = [
         include("printing.urls")
     ),
 ]
+
+if settings.IS_PORTABLE:
+    urlpatterns += [
+        re_path(
+            r"^media/(?P<path>.*)$",
+            serve,
+            {
+                "document_root": settings.MEDIA_ROOT,
+                "show_indexes": False,
+            },
+        ),
+    ]
