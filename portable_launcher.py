@@ -45,6 +45,29 @@ def find_application_root(portable_root: Path) -> Path:
     )
 
 
+def is_frozen_application() -> bool:
+    return bool(getattr(sys, "frozen", False))
+
+
+def get_portable_root() -> Path:
+    """Retorna a pasta gravável ao lado do script ou do executável."""
+    if is_frozen_application():
+        return Path(sys.executable).resolve().parent
+    return Path(__file__).resolve().parent
+
+
+def get_application_root(portable_root: Path) -> Path:
+    """Retorna recursos internos do bundle ou o código-fonte local."""
+    if is_frozen_application():
+        bundle_root = getattr(sys, "_MEIPASS", None)
+        if not bundle_root:
+            raise RuntimeError(
+                "O executável não informou a pasta interna de recursos."
+            )
+        return Path(bundle_root).resolve()
+    return find_application_root(portable_root)
+
+
 def prepare_directories(portable_root: Path) -> dict[str, Path]:
     paths = {
         name: portable_root / name
@@ -235,7 +258,61 @@ def configure_django_environment(
     os.chdir(application_root)
 
 
-def prepare_django(logger: logging.Logger) -> object:
+def create_initial_owner_if_needed(
+    logger: logging.Logger,
+    *,
+    skip: bool = False,
+) -> None:
+    from django.contrib.auth import get_user_model
+    from django.core.management import call_command
+    from django.core.management.base import CommandError
+
+    if skip or get_user_model().objects.exists():
+        return
+
+    print()
+    print("=" * 48)
+    print("        PRIMEIRA CONFIGURAÇÃO DO PRAÇA PDV")
+    print("=" * 48)
+    print("Crie a empresa e o primeiro usuário proprietário.")
+    print("A senha será solicitada sem aparecer na tela.")
+    print()
+
+    while True:
+        company = input("Nome do estabelecimento: ").strip()
+        username = input("Usuário do proprietário: ").strip()
+        email = input("E-mail do proprietário: ").strip()
+        try:
+            call_command(
+                "create_company_owner",
+                company=company,
+                username=username,
+                email=email,
+            )
+        except CommandError as exc:
+            print()
+            print(f"Não foi possível criar o proprietário: {exc}")
+            retry = input("Deseja tentar novamente? [S/n]: ").strip().lower()
+            if retry in {"n", "nao", "não"}:
+                raise RuntimeError(
+                    "A configuração inicial não foi concluída."
+                ) from exc
+            print()
+            continue
+
+        logger.info(
+            "Configuração inicial concluída; empresa e proprietário criados."
+        )
+        print()
+        print("Configuração inicial concluída com sucesso.")
+        return
+
+
+def prepare_django(
+    logger: logging.Logger,
+    *,
+    skip_owner_setup: bool = False,
+) -> object:
     import django
     from django.core.management import call_command
 
@@ -243,6 +320,8 @@ def prepare_django(logger: logging.Logger) -> object:
     logger.info("Aplicando migrations pendentes.")
     call_command("migrate", interactive=False, verbosity=1)
     logger.info("Migrations concluídas.")
+
+    create_initial_owner_if_needed(logger, skip=skip_owner_setup)
 
     if env_flag("PORTABLE_COLLECTSTATIC", default=True):
         logger.info("Coletando arquivos estáticos.")
@@ -422,13 +501,13 @@ def main() -> int:
     if arguments.no_browser or arguments.smoke_test:
         os.environ["PORTABLE_OPEN_BROWSER"] = "false"
 
-    portable_root = Path(__file__).resolve().parent
+    portable_root = get_portable_root()
     paths = prepare_directories(portable_root)
     logger = configure_logging(paths["logs"])
 
     try:
         load_environment_file(paths["config"] / "portable.env")
-        application_root = find_application_root(portable_root)
+        application_root = get_application_root(portable_root)
         port = parse_port()
         lan_ip = detect_lan_ipv4()
         configure_django_environment(
@@ -443,7 +522,10 @@ def main() -> int:
             APP_VERSION,
             lan_ip or "indisponível",
         )
-        application = prepare_django(logger)
+        application = prepare_django(
+            logger,
+            skip_owner_setup=arguments.smoke_test,
+        )
         return run_server(
             application,
             port,

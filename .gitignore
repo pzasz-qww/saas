@@ -16,6 +16,11 @@ config/portable.env
 config/portable_secret_key.txt
 static/admin/
 
+# Empacotamento Windows
+build/
+dist/
+release/
+
 # Ambiente virtual
 venv/
 .venv/

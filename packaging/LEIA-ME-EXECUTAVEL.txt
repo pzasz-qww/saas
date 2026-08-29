@@ -1,0 +1,45 @@
+PRAÇA PDV LOCAL — PREBETA 3
+============================
+
+REQUISITOS
+
+- Windows 11 de 64 bits (x64).
+- Uma pasta gravável, como Área de Trabalho, Documentos ou pendrive.
+- Rede privada Wi-Fi ou cabeada para acesso por celulares e outros PCs.
+
+COMO USAR
+
+1. Copie a pasta PRACA_PDV_PORTABLE para o computador de destino.
+2. Dê dois cliques em PracaPDV.exe.
+3. Na primeira execução, informe estabelecimento, usuário, e-mail e senha.
+4. Aguarde a mensagem Status: ONLINE e a abertura do navegador.
+5. Nos celulares, use o endereço mostrado em Na rede local.
+
+O computador de destino não precisa ter Python nem acesso à internet.
+
+DADOS IMPORTANTES
+
+O executável cria ao lado dele:
+
+- data\db.sqlite3: banco ativo;
+- media\: uploads;
+- logs\: diagnóstico;
+- backups\: reservado para cópias futuras;
+- config\: chave e configuração local;
+- static\: arquivos publicados da interface.
+
+Mantenha o executável e essas pastas juntos. Para mover o sistema, encerre com
+Ctrl+C e copie a pasta inteira. Não remova o pendrive durante a execução.
+
+SEGURANÇA E FIREWALL
+
+- Permita o acesso somente em redes privadas no Firewall do Windows.
+- Não exponha a porta 8000 à internet.
+- O executável ainda não possui assinatura digital. O Windows pode mostrar a
+  proteção SmartScreen; confirme que o arquivo veio da distribuição oficial.
+
+LIMITAÇÕES DESTA FASE
+
+- SQLite não é indicado para muitas escritas simultâneas.
+- Não há sincronização com a nuvem nem backup automático.
+- Esta compilação é x64 e não atende Windows ARM64 nativo.
