@@ -299,6 +299,48 @@ concorrentes podem encontrar contenção no banco.
 
 O roteiro manual completo está em `PORTABLE_TEST.md`.
 
+## Executável autocontido para Windows 11
+
+O build PyInstaller gera um único `PracaPDV.exe` para Windows 11 x64. O PC de
+destino não precisa ter Python nem internet. Templates, estáticos de origem,
+migrations, Django, Waitress e SQLite ficam dentro do executável; banco, mídia,
+logs e configuração permanecem ao lado dele para sobreviver às atualizações.
+
+Prepare o ambiente de build:
+
+```powershell
+.\venv\Scripts\python.exe -m pip install -r requirements-build.txt
+```
+
+Gere a distribuição:
+
+```powershell
+.\build_windows_exe.bat
+```
+
+Resultado:
+
+```text
+release/PRACA_PDV_PORTABLE-<data-pid>/
+├── PracaPDV.exe
+└── LEIA-ME-EXECUTAVEL.txt
+```
+
+Para validar o binário sem abrir o navegador nem solicitar o proprietário:
+
+```powershell
+.\release\PRACA_PDV_PORTABLE-<data-pid>\PracaPDV.exe --smoke-test
+```
+
+Na primeira execução normal com banco vazio, o console solicita o nome do
+estabelecimento e os dados do proprietário. O roteiro de homologação está em
+`WINDOWS_EXE_TEST.md`.
+
+O executável deve ficar em uma pasta gravável. Não use `Program Files`, não o
+exponha diretamente à internet e permita o Firewall apenas em redes privadas.
+Como esta fase ainda não possui assinatura digital, o Windows SmartScreen pode
+pedir confirmação da origem do arquivo.
+
 ---
 
 # Filosofia do Projeto

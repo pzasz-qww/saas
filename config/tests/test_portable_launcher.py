@@ -30,6 +30,47 @@ class PortableLauncherTests(TestCase):
                 application_root,
             )
 
+    def test_frozen_runtime_uses_executable_directory_for_data(self):
+        with TemporaryDirectory() as temporary_directory:
+            executable_path = Path(temporary_directory) / "PracaPDV.exe"
+            with (
+                patch.object(
+                    portable_launcher,
+                    "is_frozen_application",
+                    return_value=True,
+                ),
+                patch.object(
+                    portable_launcher.sys,
+                    "executable",
+                    str(executable_path),
+                ),
+            ):
+                self.assertEqual(
+                    portable_launcher.get_portable_root(),
+                    executable_path.parent.resolve(),
+                )
+
+    def test_frozen_runtime_uses_internal_bundle_for_resources(self):
+        with TemporaryDirectory() as temporary_directory:
+            bundle_root = Path(temporary_directory)
+            with (
+                patch.object(
+                    portable_launcher,
+                    "is_frozen_application",
+                    return_value=True,
+                ),
+                patch.object(
+                    portable_launcher.sys,
+                    "_MEIPASS",
+                    str(bundle_root),
+                    create=True,
+                ),
+            ):
+                self.assertEqual(
+                    portable_launcher.get_application_root(Path("ignored")),
+                    bundle_root.resolve(),
+                )
+
     def test_persists_secret_key_between_starts(self):
         with TemporaryDirectory() as temporary_directory:
             config_directory = Path(temporary_directory)

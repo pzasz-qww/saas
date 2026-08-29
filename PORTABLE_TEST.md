@@ -53,19 +53,16 @@ Resultado esperado: redirecionamento para a tela de login.
 
 ## Teste 3 — primeiro proprietário em um banco vazio
 
-Uma cópia portátil recém-criada não possui usuários. Depois da primeira
-execução do launcher, encerre-o com `Ctrl+C` e, no PowerShell aberto na pasta do
-projeto, execute:
+Uma cópia portátil recém-criada não possui usuários. Na primeira execução
+normal, o launcher solicita no próprio console:
 
-```powershell
-$env:DEPLOYMENT_MODE = "portable"
-$env:PORTABLE_ROOT = (Get-Location).Path
-$env:SECRET_KEY = (Get-Content .\config\portable_secret_key.txt -Raw).Trim()
-.\venv\Scripts\python.exe manage.py create_company_owner --company "Meu Bar" --username "proprietario" --email "proprietario@example.com"
-```
+1. nome do estabelecimento;
+2. usuário do proprietário;
+3. e-mail do proprietário;
+4. senha e confirmação.
 
-Digite e confirme uma senha forte quando solicitado. Em seguida, remova as
-variáveis apenas dessa sessão do PowerShell ou feche a janela.
+Resultado esperado: mensagem `Configuração inicial concluída com sucesso` e
+abertura normal do servidor. Nas execuções seguintes, o assistente não aparece.
 
 ## Teste 4 — fluxo funcional mínimo
 
