@@ -4,15 +4,16 @@ from dataclasses import dataclass
 from django.db import transaction
 from django.utils import timezone
 
+from products.recipe_services import build_sale_consumption_plan
 from products.services import (
-    aggregate_physical_product_quantities,
+    consume_component_stock,
     consume_stock,
     lock_fifo_entries,
     restore_sale_stock,
 )
 from products.models import StockMovement
 from products.sale_quantities import get_physical_consumption
-from sales.models import Sale, SaleItem
+from sales.models import Sale, SaleItem, SaleItemComponent
 
 from .models import Order
 
@@ -134,6 +135,28 @@ def _get_traceable_approved_sale(order):
         )
 
     sale_item_by_id = {item.pk: item for item in sale_items}
+    component_snapshots = list(
+        SaleItemComponent.objects.select_for_update()
+        .filter(sale_item_id__in=sale_item_by_id)
+        .select_related("ingredient")
+        .order_by("sale_item_id", "ingredient_id", "id")
+    )
+    component_by_id = {
+        component.pk: component for component in component_snapshots
+    }
+    components_by_item = defaultdict(list)
+    for component in component_snapshots:
+        if (
+            component.company_id != order.company_id
+            or component.sale_item_id not in sale_item_by_id
+            or component.ingredient.company_id != order.company_id
+            or component.physical_quantity_total <= 0
+        ):
+            raise InvalidOrderState(
+                "O pedido aprovado possui snapshot de receita inconsistente."
+            )
+        components_by_item[component.sale_item_id].append(component)
+
     movements = list(
         StockMovement.objects.select_for_update()
         .filter(
@@ -143,26 +166,53 @@ def _get_traceable_approved_sale(order):
         .order_by("product_id", "stock_entry_id", "id")
     )
     quantities_by_item = defaultdict(int)
+    quantities_by_component = defaultdict(int)
     for movement in movements:
         sale_item = sale_item_by_id[movement.sale_item_id]
         if (
             movement.company_id != order.company_id
-            or movement.product_id != sale_item.product_id
             or movement.stock_entry_id is None
             or movement.quantity <= 0
         ):
             raise InvalidOrderState(
                 "O pedido aprovado possui baixa de estoque inconsistente."
             )
-        quantities_by_item[sale_item.pk] += movement.quantity
+        if movement.sale_item_component_id is not None:
+            component = component_by_id.get(movement.sale_item_component_id)
+            if (
+                component is None
+                or component.sale_item_id != sale_item.pk
+                or component.ingredient_id != movement.product_id
+            ):
+                raise InvalidOrderState(
+                    "O pedido aprovado possui baixa de componente inconsistente."
+                )
+            quantities_by_component[component.pk] += movement.quantity
+        else:
+            if movement.product_id != sale_item.product_id:
+                raise InvalidOrderState(
+                    "O pedido aprovado possui baixa do produto inconsistente."
+                )
+            quantities_by_item[sale_item.pk] += movement.quantity
 
-    if any(
-        quantities_by_item[item.pk] != item.stock_quantity_for_traceability
-        for item in sale_items
-    ):
-        raise InvalidOrderState(
-            "O pedido aprovado possui venda legada ou baixa incompleta."
-        )
+    for item in sale_items:
+        item_components = components_by_item[item.pk]
+        invalid = False
+        if item_components:
+            invalid = quantities_by_item[item.pk] != 0 or any(
+                quantities_by_component[component.pk]
+                != component.physical_quantity_total
+                for component in item_components
+            )
+        else:
+            invalid = (
+                quantities_by_item[item.pk]
+                != item.stock_quantity_for_traceability
+            )
+        if invalid:
+            raise InvalidOrderState(
+                "O pedido aprovado possui venda legada ou baixa incompleta."
+            )
 
     movement_ids = [movement.pk for movement in movements]
     if StockMovement.objects.filter(reversal_of_id__in=movement_ids).exists():
@@ -273,13 +323,14 @@ def approve_order(*, order_id, company, payment_method, user=None):
             )
             _validate_order_items(order, items)
 
-            product_quantities = aggregate_physical_product_quantities(
-                items,
+            consumption_plan = build_sale_consumption_plan(
+                items=items,
                 company=order.company,
+                lock=True,
             )
             entries_by_product = lock_fifo_entries(
                 company=order.company,
-                product_quantities=product_quantities,
+                product_quantities=consumption_plan.product_quantities,
             )
 
             sale = Sale.objects.create(
@@ -288,15 +339,16 @@ def approve_order(*, order_id, company, payment_method, user=None):
                 created_by=user,
             )
 
-            for order_item in items:
+            for line in consumption_plan.lines:
+                order_item = line.item
                 consumption = get_physical_consumption(
-                    order_item.product,
+                    line.product,
                     order_item.quantity,
                 )
                 sale_item = SaleItem.objects.create(
                     sale=sale,
                     company=order.company,
-                    product=order_item.product,
+                    product=line.product,
                     quantity=order_item.quantity,
                     unit_price=order_item.unit_price,
                     unit_cost=0,
@@ -307,13 +359,41 @@ def approve_order(*, order_id, company, payment_method, user=None):
                     physical_quantity_total=consumption.total_quantity,
                     physical_base_unit=consumption.base_unit,
                 )
-                movements = consume_stock(
-                    company=order.company,
-                    sale_item=sale_item,
-                    quantity=consumption.total_quantity,
-                    entries_by_product=entries_by_product,
-                    created_by=user,
-                )
+                movements = []
+                if line.uses_components:
+                    for expanded_component in line.components:
+                        component_snapshot = SaleItemComponent.objects.create(
+                            company=order.company,
+                            sale_item=sale_item,
+                            source_component=(
+                                expanded_component.source_component
+                            ),
+                            ingredient=expanded_component.ingredient,
+                            quantity_per_sale_unit=(
+                                expanded_component.quantity_per_sale_unit
+                            ),
+                            physical_quantity_total=(
+                                expanded_component.total_quantity
+                            ),
+                            physical_base_unit=expanded_component.base_unit,
+                        )
+                        movements.extend(
+                            consume_component_stock(
+                                company=order.company,
+                                sale_item_component=component_snapshot,
+                                quantity=expanded_component.total_quantity,
+                                entries_by_product=entries_by_product,
+                                created_by=user,
+                            )
+                        )
+                else:
+                    movements = consume_stock(
+                        company=order.company,
+                        sale_item=sale_item,
+                        quantity=line.own_consumption.total_quantity,
+                        entries_by_product=entries_by_product,
+                        created_by=user,
+                    )
                 total_cost = sum(
                     (movement.cost_value for movement in movements),
                     start=order_item.quantity * 0,

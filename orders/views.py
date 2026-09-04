@@ -21,9 +21,12 @@ from accounts.permissions import (
     company_required,
 )
 from products.models import Product
+from products.recipe_services import (
+    RecipeServiceError,
+    build_sale_consumption_plan,
+)
 from products.sale_quantities import (
     PhysicalSaleQuantityError,
-    get_physical_consumption,
     get_sale_availability,
 )
 from products.services import (
@@ -60,10 +63,42 @@ def build_stock_shortage_message(
     shortages,
     products_by_id,
     requested_quantities=None,
+    consumption_plan=None,
 ):
     details = []
 
     for shortage in shortages:
+        component_lines = []
+        if consumption_plan is not None:
+            component_lines = [
+                (line.product, component)
+                for line in consumption_plan.lines
+                for component in line.components
+                if component.ingredient.pk == shortage.product_id
+            ]
+        if component_lines:
+            ingredient = consumption_plan.requirement_products[
+                shortage.product_id
+            ]
+            prepared_names = ", ".join(
+                sorted({product.name for product, _component in component_lines})
+            )
+            base_unit = consumption_plan.requirement_base_units[
+                shortage.product_id
+            ]
+            if shortage.available <= 0:
+                detail = (
+                    f"Ingrediente {ingredient.name} ({prepared_names}): sem estoque."
+                )
+            else:
+                detail = (
+                    f"Ingrediente {ingredient.name} ({prepared_names}): necessários "
+                    f"{format_stock_quantity(shortage.requested)} {base_unit}, disponíveis "
+                    f"{format_stock_quantity(shortage.available)} {base_unit}."
+                )
+            details.append(detail)
+            continue
+
         product = products_by_id[shortage.product_id]
         requested = (
             requested_quantities[shortage.product_id]
@@ -203,17 +238,20 @@ def pdv_view(request):
         ]
 
         try:
-            physical_requested_quantities = {
-                product_id: get_physical_consumption(
-                    products_by_id[product_id],
-                    commercial_quantity,
-                ).total_quantity
-                for product_id, commercial_quantity in requested_quantities.items()
-            }
+            consumption_plan = build_sale_consumption_plan(
+                items=validated_items,
+                company=company,
+            )
             shortages = get_stock_shortages(
                 company=company,
-                product_quantities=physical_requested_quantities,
+                product_quantities=consumption_plan.product_quantities,
             )
+        except RecipeServiceError as error:
+            messages.warning(
+                request,
+                f"Não foi possível enviar a pré-venda. {error}",
+            )
+            return redirect("orders:pdv")
         except (PhysicalSaleQuantityError, StockServiceError):
             messages.warning(request, INVALID_CART_MESSAGE)
             return redirect("orders:pdv")
@@ -238,6 +276,7 @@ def pdv_view(request):
                     shortages,
                     products_by_id,
                     requested_quantities,
+                    consumption_plan,
                 ),
             )
             return redirect("orders:pdv")
@@ -447,7 +486,7 @@ def approve_order(request, order_id, payment_method):
         )
     except InsufficientStock as error:
         messages.warning(request, str(error))
-    except (OrderServiceError, StockServiceError) as error:
+    except (OrderServiceError, RecipeServiceError, StockServiceError) as error:
         messages.warning(request, str(error))
     else:
         if result.created:

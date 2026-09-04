@@ -8,7 +8,7 @@ from django.urls import reverse
 from orders.models import Order, OrderItem
 from orders.services import approve_order
 from orders.views import PDV_DRAFT_SESSION_KEY
-from products.models import StockMovement
+from products.models import ProductComponent, StockMovement
 from products.services import InsufficientStock
 from sales.models import Sale
 
@@ -204,6 +204,67 @@ class PdvStockValidationTests(OrderTestMixin, TestCase):
         self.assert_nothing_was_created_or_moved()
         entry.refresh_from_db()
         self.assertEqual(entry.remaining_quantity, Decimal("99"))
+
+    def test_on_demand_product_uses_ingredient_stock_without_own_lot(self):
+        drink = self.make_product(
+            name="Caipirinha",
+            inventory_role="prepared",
+            preparation_mode="on_demand",
+        )
+        spirit = self.make_product(
+            name="Cachaça",
+            product_type="internal_use",
+            inventory_role="input",
+            stock_dimension="volume",
+        )
+        ProductComponent.objects.create(
+            company=self.company,
+            product=drink,
+            ingredient=spirit,
+            quantity=Decimal("50"),
+            unit="mL",
+        )
+        entry = make_entry(product=spirit, quantity="500")
+
+        _response, message = self.post_cart(
+            [{"id": drink.pk, "quantity": 10}]
+        )
+
+        self.assertEqual(message, "Pedido #1 enviado como pré-venda.")
+        self.assertTrue(Order.objects.filter(items__product=drink).exists())
+        entry.refresh_from_db()
+        self.assertEqual(entry.remaining_quantity, Decimal("500"))
+
+    def test_on_demand_shortage_names_the_limiting_ingredient(self):
+        drink = self.make_product(
+            name="Caipirinha limitada",
+            inventory_role="prepared",
+            preparation_mode="on_demand",
+        )
+        spirit = self.make_product(
+            name="Cachaça limitada",
+            product_type="internal_use",
+            inventory_role="input",
+            stock_dimension="volume",
+        )
+        ProductComponent.objects.create(
+            company=self.company,
+            product=drink,
+            ingredient=spirit,
+            quantity=Decimal("50"),
+            unit="mL",
+        )
+        entry = make_entry(product=spirit, quantity="499")
+
+        _response, message = self.post_cart(
+            [{"id": drink.pk, "quantity": 10}]
+        )
+
+        self.assertIn("Ingrediente Cachaça limitada", message)
+        self.assertIn("necessários 500 mL", message)
+        self.assert_nothing_was_created_or_moved()
+        entry.refresh_from_db()
+        self.assertEqual(entry.remaining_quantity, Decimal("499"))
 
     def test_repeated_product_is_aggregated_before_stock_validation(self):
         product = self.make_product(name="Produto repetido")
