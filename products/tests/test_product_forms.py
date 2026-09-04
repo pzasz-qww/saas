@@ -53,7 +53,8 @@ class ProductCreateFormTests(TestCase):
                 "sale_price": "18",
                 "sale_form": "dose",
                 "inventory_role": "prepared",
-                "stock_dimension": "count",
+                "stock_dimension": "volume",
+                "dose_ml": "50",
             },
             company=self.company,
         )

@@ -1,4 +1,5 @@
 import json
+from decimal import Decimal
 
 from django.contrib.messages import get_messages
 from django.test import TestCase
@@ -184,6 +185,25 @@ class PdvStockValidationTests(OrderTestMixin, TestCase):
         entry.refresh_from_db()
         self.assertEqual(entry.remaining_quantity, 10)
         self.assertFalse(StockMovement.objects.exists())
+
+    def test_dose_cart_validates_physical_millilitres_but_reports_doses(self):
+        product = self.make_product(
+            name="Dose de vodka",
+            sale_form="dose",
+            stock_dimension="volume",
+            dose_ml="50",
+        )
+        entry = make_entry(product=product, quantity="99")
+
+        _response, message = self.post_cart(
+            [{"id": product.pk, "quantity": 2}]
+        )
+
+        self.assertIn("solicitadas 2 doses", message.lower())
+        self.assertIn("disponíveis 1", message.lower())
+        self.assert_nothing_was_created_or_moved()
+        entry.refresh_from_db()
+        self.assertEqual(entry.remaining_quantity, Decimal("99"))
 
     def test_repeated_product_is_aggregated_before_stock_validation(self):
         product = self.make_product(name="Produto repetido")

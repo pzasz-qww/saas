@@ -55,27 +55,35 @@ class ProductCreateRegressionTests(TestCase):
         self.assertIsNone(product.preparation_mode)
         self.assertFalse(product.components.exists())
 
-    def test_dose_without_ml_is_valid(self):
+    def test_dose_without_ml_is_rejected_with_specific_error(self):
         response = self.client.post(
             self.url,
-            self.payload(name="Dose simples", sale_form="dose", dose_ml=""),
+            self.payload(
+                name="Dose simples",
+                sale_form="dose",
+                stock_dimension="volume",
+                dose_ml="",
+            ),
         )
 
-        self.assertEqual(response.status_code, 302)
-        product = Product.objects.get(name="Dose simples")
-        self.assertEqual(product.sale_form, "dose")
-        self.assertIsNone(product.dose_ml)
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Informe o volume de cada dose em mL.")
+        self.assertFalse(Product.objects.filter(name="Dose simples").exists())
 
-    def test_portion_without_weight_is_valid(self):
+    def test_portion_without_weight_is_rejected_with_specific_error(self):
         response = self.client.post(
             self.url,
-            self.payload(name="Porção simples", sale_form="portion", portion_g=""),
+            self.payload(
+                name="Porção simples",
+                sale_form="portion",
+                stock_dimension="weight",
+                portion_g="",
+            ),
         )
 
-        self.assertEqual(response.status_code, 302)
-        product = Product.objects.get(name="Porção simples")
-        self.assertEqual(product.sale_form, "portion")
-        self.assertIsNone(product.portion_g)
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Informe o peso de cada porção em gramas.")
+        self.assertFalse(Product.objects.filter(name="Porção simples").exists())
 
     def test_zero_component_rows_are_valid(self):
         response = self.client.post(
@@ -128,6 +136,8 @@ class ProductCreateRegressionTests(TestCase):
                 sale_price="18,50",
                 sale_form="dose",
                 inventory_role="prepared",
+                stock_dimension="volume",
+                dose_ml="50",
                 preparation_mode="",
             ),
         )

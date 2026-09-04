@@ -53,27 +53,43 @@ class ProductDomainTests(TestCase):
         self.assertEqual(without_description.sale_form, "unit")
         self.assertEqual(with_description.unit_description, "garrafa 600 ml")
 
-    def test_dose_is_valid_with_or_without_ml(self):
-        without_ml = self.make_product(name="Dose livre", sale_form="dose")
+    def test_dose_requires_ml_and_volume_stock(self):
         with_ml = self.make_product(
             name="Dose medida",
             sale_form="dose",
+            stock_dimension="volume",
             dose_ml="50.000000",
         )
 
-        self.assertIsNone(without_ml.dose_ml)
         self.assertEqual(with_ml.dose_ml, Decimal("50.000000"))
+        for overrides in (
+            {"sale_form": "dose", "stock_dimension": "volume"},
+            {"sale_form": "dose", "stock_dimension": "count", "dose_ml": "50"},
+        ):
+            with self.subTest(overrides=overrides):
+                with self.assertRaises(ValidationError):
+                    self.make_product(name="Dose inválida", **overrides)
 
-    def test_portion_is_valid_with_or_without_grams(self):
-        without_grams = self.make_product(name="Porção livre", sale_form="portion")
+    def test_portion_requires_grams_and_weight_stock(self):
         with_grams = self.make_product(
             name="Porção medida",
             sale_form="portion",
+            stock_dimension="weight",
             portion_g="500.000000",
         )
 
-        self.assertIsNone(without_grams.portion_g)
         self.assertEqual(with_grams.portion_g, Decimal("500.000000"))
+        for overrides in (
+            {"sale_form": "portion", "stock_dimension": "weight"},
+            {
+                "sale_form": "portion",
+                "stock_dimension": "count",
+                "portion_g": "500",
+            },
+        ):
+            with self.subTest(overrides=overrides):
+                with self.assertRaises(ValidationError):
+                    self.make_product(name="Porção inválida", **overrides)
 
     def test_every_stock_dimension_is_supported(self):
         for dimension in ("count", "weight", "volume"):

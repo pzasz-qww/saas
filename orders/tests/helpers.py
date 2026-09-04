@@ -51,6 +51,12 @@ def make_product(
     product_type="sale",
     category=None,
     category_name="Testes",
+    inventory_role="direct",
+    sale_form="unit",
+    stock_dimension="count",
+    dose_ml=None,
+    portion_g=None,
+    preparation_mode=None,
 ):
     if category is None and category_name is not None:
         category = resolve_category(
@@ -65,6 +71,12 @@ def make_product(
         category=category,
         category_legacy=category.name if category else None,
         product_type=product_type,
+        inventory_role=inventory_role,
+        sale_form=sale_form,
+        stock_dimension=stock_dimension,
+        dose_ml=D(dose_ml) if dose_ml is not None else None,
+        portion_g=D(portion_g) if portion_g is not None else None,
+        preparation_mode=preparation_mode,
         sale_price=D(sale_price),
         minimum_quantity=D("0.00"),
         active=True,

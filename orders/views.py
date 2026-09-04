@@ -21,6 +21,11 @@ from accounts.permissions import (
     company_required,
 )
 from products.models import Product
+from products.sale_quantities import (
+    PhysicalSaleQuantityError,
+    get_physical_consumption,
+    get_sale_availability,
+)
 from products.services import (
     InsufficientStock,
     StockServiceError,
@@ -51,18 +56,38 @@ def format_stock_quantity(value):
     return format(value.normalize(), "f")
 
 
-def build_stock_shortage_message(shortages, products_by_id):
+def build_stock_shortage_message(
+    shortages,
+    products_by_id,
+    requested_quantities=None,
+):
     details = []
 
     for shortage in shortages:
         product = products_by_id[shortage.product_id]
+        requested = (
+            requested_quantities[shortage.product_id]
+            if requested_quantities is not None
+            else shortage.requested
+        )
+        try:
+            available = get_sale_availability(
+                product,
+                shortage.available,
+            ).available_sale_quantity
+        except PhysicalSaleQuantityError:
+            available = shortage.available
+        sale_unit_label = {
+            "dose": "doses",
+            "portion": "porções",
+        }.get(product.sale_form, "unidades")
         if shortage.available <= 0:
             detail = f"{product.name}: sem estoque."
         else:
             detail = (
                 f"{product.name}: solicitadas "
-                f"{format_stock_quantity(shortage.requested)} unidades, disponíveis "
-                f"{format_stock_quantity(shortage.available)}."
+                f"{format_stock_quantity(requested)} {sale_unit_label}, disponíveis "
+                f"{format_stock_quantity(available)}."
             )
         details.append(detail)
 
@@ -178,11 +203,18 @@ def pdv_view(request):
         ]
 
         try:
+            physical_requested_quantities = {
+                product_id: get_physical_consumption(
+                    products_by_id[product_id],
+                    commercial_quantity,
+                ).total_quantity
+                for product_id, commercial_quantity in requested_quantities.items()
+            }
             shortages = get_stock_shortages(
                 company=company,
-                product_quantities=requested_quantities,
+                product_quantities=physical_requested_quantities,
             )
-        except StockServiceError:
+        except (PhysicalSaleQuantityError, StockServiceError):
             messages.warning(request, INVALID_CART_MESSAGE)
             return redirect("orders:pdv")
 
@@ -202,7 +234,11 @@ def pdv_view(request):
             }
             messages.warning(
                 request,
-                build_stock_shortage_message(shortages, products_by_id),
+                build_stock_shortage_message(
+                    shortages,
+                    products_by_id,
+                    requested_quantities,
+                ),
             )
             return redirect("orders:pdv")
 

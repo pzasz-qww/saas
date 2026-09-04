@@ -8,9 +8,10 @@ from django.db import transaction
 from django.db.models import F, Sum
 from django.utils import timezone
 
-from .money import InvalidMoneyValue, decimal_amount
+from .money import InvalidMoneyValue, decimal_amount, round_money
 from .models import Product, StockEntry, StockMovement
 from .quantities import QuantityConversionError, normalize_quantity
+from .sale_quantities import get_physical_consumption
 
 
 ZERO = Decimal("0.00")
@@ -296,6 +297,36 @@ def aggregate_product_quantities(items, *, company):
     return dict(sorted(totals.items()))
 
 
+def aggregate_physical_product_quantities(items, *, company):
+    """Aggregate the physical stock required by commercial item quantities."""
+    company_id = _company_id(company)
+    totals = defaultdict(lambda: ZERO)
+
+    for item in items:
+        product_id = getattr(item, "product_id", None)
+        product = getattr(item, "product", None)
+        if product_id is None or product is None:
+            raise InvalidStockOperation("Item sem produto.")
+        if (
+            getattr(item, "company_id", None) != company_id
+            or product.company_id != company_id
+        ):
+            raise InvalidStockOperation(
+                f"O item do produto #{product_id} pertence a outra empresa."
+            )
+
+        try:
+            consumption = get_physical_consumption(product, item.quantity)
+        except ValueError as exc:
+            raise InvalidStockOperation(str(exc)) from exc
+        totals[product_id] += consumption.total_quantity
+
+    if not totals:
+        raise InvalidStockOperation("O pedido não possui itens.")
+
+    return dict(sorted(totals.items()))
+
+
 def lock_fifo_entries(*, company, product_quantities):
     """
     Lock all usable entries for the requested products in deterministic FIFO order.
@@ -415,7 +446,12 @@ def _create_negative_movements(
         )
 
     movements = []
-    for entry, allocated_quantity in allocations:
+    remaining_sale_value = (
+        round_money(sale_item.total_price)
+        if movement_type == "sale" and sale_item is not None
+        else ZERO
+    )
+    for allocation_index, (entry, allocated_quantity) in enumerate(allocations):
         if entry.company_id != company_id or entry.product_id != product_id:
             raise InvalidStockOperation(
                 f"A entrada #{entry.pk} não pertence à empresa e ao produto esperados."
@@ -445,7 +481,13 @@ def _create_negative_movements(
                 raise InvalidStockOperation(
                     "Movimentos de venda precisam estar ligados a um item da venda."
                 )
-            sale_value = allocated_quantity * sale_item.unit_price
+            if allocation_index == len(allocations) - 1:
+                sale_value = remaining_sale_value
+            else:
+                sale_value = round_money(
+                    sale_item.total_price * allocated_quantity / requested
+                )
+                remaining_sale_value -= sale_value
 
         movements.append(
             StockMovement.objects.create(
@@ -500,11 +542,16 @@ def consume_stock(
             "Venda, item e produto precisam pertencer à mesma empresa."
         )
 
-    item_quantity = _positive_decimal(locked_sale_item.quantity)
-    requested = item_quantity if quantity is None else _positive_decimal(quantity)
-    if requested != item_quantity:
+    expected_quantity = _positive_decimal(
+        locked_sale_item.stock_quantity_for_traceability,
+        field_name="quantidade física do item",
+    )
+    requested = (
+        expected_quantity if quantity is None else _positive_decimal(quantity)
+    )
+    if requested != expected_quantity:
         raise InvalidStockOperation(
-            "A quantidade consumida precisa ser igual à quantidade do item da venda."
+            "A quantidade consumida precisa ser igual ao retrato físico do item da venda."
         )
 
     existing_movements = list(
@@ -578,6 +625,10 @@ def restore_sale_stock(*, company, sale, created_by=None):
                 "Venda, itens e produtos precisam pertencer à mesma empresa."
             )
         _positive_decimal(item.quantity)
+        _positive_decimal(
+            item.stock_quantity_for_traceability,
+            field_name="quantidade física do item",
+        )
         item_by_id[item.pk] = item
 
     _lock_company_products(
@@ -619,7 +670,7 @@ def restore_sale_stock(*, company, sale, created_by=None):
         totals_by_item[item.pk] += movement_quantity
 
     for item in sale_items:
-        if totals_by_item[item.pk] != item.quantity:
+        if totals_by_item[item.pk] != item.stock_quantity_for_traceability:
             raise UntraceableSaleStock(
                 f"O item de venda #{item.pk} é legado ou possui baixa incompleta."
             )
@@ -1087,6 +1138,7 @@ def apply_stock_count(
 
 
 __all__ = [
+    "aggregate_physical_product_quantities",
     "InsufficientStock",
     "InvalidStockOperation",
     "StockConcurrencyError",

@@ -5,12 +5,13 @@ from django.db import transaction
 from django.utils import timezone
 
 from products.services import (
-    aggregate_product_quantities,
+    aggregate_physical_product_quantities,
     consume_stock,
     lock_fifo_entries,
     restore_sale_stock,
 )
 from products.models import StockMovement
+from products.sale_quantities import get_physical_consumption
 from sales.models import Sale, SaleItem
 
 from .models import Order
@@ -156,7 +157,7 @@ def _get_traceable_approved_sale(order):
         quantities_by_item[sale_item.pk] += movement.quantity
 
     if any(
-        quantities_by_item[item.pk] != item.quantity
+        quantities_by_item[item.pk] != item.stock_quantity_for_traceability
         for item in sale_items
     ):
         raise InvalidOrderState(
@@ -272,7 +273,7 @@ def approve_order(*, order_id, company, payment_method, user=None):
             )
             _validate_order_items(order, items)
 
-            product_quantities = aggregate_product_quantities(
+            product_quantities = aggregate_physical_product_quantities(
                 items,
                 company=order.company,
             )
@@ -288,6 +289,10 @@ def approve_order(*, order_id, company, payment_method, user=None):
             )
 
             for order_item in items:
+                consumption = get_physical_consumption(
+                    order_item.product,
+                    order_item.quantity,
+                )
                 sale_item = SaleItem.objects.create(
                     sale=sale,
                     company=order.company,
@@ -295,11 +300,17 @@ def approve_order(*, order_id, company, payment_method, user=None):
                     quantity=order_item.quantity,
                     unit_price=order_item.unit_price,
                     unit_cost=0,
+                    sale_form_snapshot=consumption.sale_form,
+                    physical_quantity_per_sale_unit=(
+                        consumption.quantity_per_sale_unit
+                    ),
+                    physical_quantity_total=consumption.total_quantity,
+                    physical_base_unit=consumption.base_unit,
                 )
                 movements = consume_stock(
                     company=order.company,
                     sale_item=sale_item,
-                    quantity=order_item.quantity,
+                    quantity=consumption.total_quantity,
                     entries_by_product=entries_by_product,
                     created_by=user,
                 )

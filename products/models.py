@@ -315,6 +315,22 @@ class Product(models.Model):
             else:
                 setattr(self, field_name, value)
 
+        if self.sale_form == "dose":
+            if self.stock_dimension != "volume":
+                errors["stock_dimension"] = (
+                    "Produtos vendidos por dose precisam controlar estoque por volume."
+                )
+            if self.dose_ml is None:
+                errors["dose_ml"] = "Informe o volume de cada dose em mL."
+
+        if self.sale_form == "portion":
+            if self.stock_dimension != "weight":
+                errors["stock_dimension"] = (
+                    "Produtos vendidos por porção precisam controlar estoque por peso."
+                )
+            if self.portion_g is None:
+                errors["portion_g"] = "Informe o peso de cada porção em gramas."
+
         if self.company_id is not None and self.unit_id is not None:
             unit_company_id = (
                 Unit.objects.filter(pk=self.unit_id)

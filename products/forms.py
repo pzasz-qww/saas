@@ -169,6 +169,8 @@ class ProductCreateForm(forms.Form):
         cleaned_data = super().clean()
         inventory_role = cleaned_data.get("inventory_role")
         preparation_mode = cleaned_data.get("preparation_mode") or None
+        sale_form = cleaned_data.get("sale_form")
+        stock_dimension = cleaned_data.get("stock_dimension")
 
         if inventory_role == "prepared" and preparation_mode is None:
             self.add_error(
@@ -185,6 +187,30 @@ class ProductCreateForm(forms.Form):
             value = cleaned_data.get(field_name)
             if value is not None and value <= 0:
                 self.add_error(field_name, f"{label} deve ser positivo.")
+
+        if sale_form == "dose":
+            if stock_dimension != "volume":
+                self.add_error(
+                    "stock_dimension",
+                    "Produtos vendidos por dose precisam controlar estoque por volume.",
+                )
+            if cleaned_data.get("dose_ml") is None:
+                self.add_error(
+                    "dose_ml",
+                    "Informe o volume de cada dose em mL.",
+                )
+
+        if sale_form == "portion":
+            if stock_dimension != "weight":
+                self.add_error(
+                    "stock_dimension",
+                    "Produtos vendidos por porção precisam controlar estoque por peso.",
+                )
+            if cleaned_data.get("portion_g") is None:
+                self.add_error(
+                    "portion_g",
+                    "Informe o peso de cada porção em gramas.",
+                )
 
         if cleaned_data.get("minimum_quantity") is None:
             cleaned_data["minimum_quantity"] = Decimal("0")
