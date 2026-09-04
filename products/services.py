@@ -298,10 +298,13 @@ def aggregate_product_quantities(items, *, company):
 
 
 def aggregate_physical_product_quantities(items, *, company):
-    """Aggregate the physical stock required by commercial item quantities."""
+    """Lock product configuration and aggregate required physical stock."""
+    _require_atomic_transaction()
     company_id = _company_id(company)
     totals = defaultdict(lambda: ZERO)
+    items = list(items)
 
+    product_ids = []
     for item in items:
         product_id = getattr(item, "product_id", None)
         product = getattr(item, "product", None)
@@ -314,15 +317,27 @@ def aggregate_physical_product_quantities(items, *, company):
             raise InvalidStockOperation(
                 f"O item do produto #{product_id} pertence a outra empresa."
             )
+        product_ids.append(product_id)
+
+    if not product_ids:
+        raise InvalidStockOperation("O pedido não possui itens.")
+
+    locked_products = _lock_company_products(
+        company_id=company_id,
+        product_ids=product_ids,
+    )
+
+    for item in items:
+        product_id = item.product_id
+        product = locked_products[product_id]
+        # The SaleItem snapshot must use the same locked configuration.
+        item.product = product
 
         try:
             consumption = get_physical_consumption(product, item.quantity)
         except ValueError as exc:
             raise InvalidStockOperation(str(exc)) from exc
         totals[product_id] += consumption.total_quantity
-
-    if not totals:
-        raise InvalidStockOperation("O pedido não possui itens.")
 
     return dict(sorted(totals.items()))
 
