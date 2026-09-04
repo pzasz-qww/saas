@@ -428,6 +428,7 @@ def _create_negative_movements(
     reason,
     notes,
     sale_item=None,
+    sale_item_component=None,
 ):
     requested = _positive_decimal(quantity)
     validate_stock_availability(
@@ -463,7 +464,11 @@ def _create_negative_movements(
     movements = []
     remaining_sale_value = (
         round_money(sale_item.total_price)
-        if movement_type == "sale" and sale_item is not None
+        if (
+            movement_type == "sale"
+            and sale_item is not None
+            and sale_item_component is None
+        )
         else ZERO
     )
     for allocation_index, (entry, allocated_quantity) in enumerate(allocations):
@@ -496,13 +501,14 @@ def _create_negative_movements(
                 raise InvalidStockOperation(
                     "Movimentos de venda precisam estar ligados a um item da venda."
                 )
-            if allocation_index == len(allocations) - 1:
-                sale_value = remaining_sale_value
-            else:
-                sale_value = round_money(
-                    sale_item.total_price * allocated_quantity / requested
-                )
-                remaining_sale_value -= sale_value
+            if sale_item_component is None:
+                if allocation_index == len(allocations) - 1:
+                    sale_value = remaining_sale_value
+                else:
+                    sale_value = round_money(
+                        sale_item.total_price * allocated_quantity / requested
+                    )
+                    remaining_sale_value -= sale_value
 
         movements.append(
             StockMovement.objects.create(
@@ -510,6 +516,7 @@ def _create_negative_movements(
                 product_id=product_id,
                 stock_entry=entry,
                 sale_item=sale_item,
+                sale_item_component=sale_item_component,
                 movement_type=movement_type,
                 quantity=allocated_quantity,
                 sale_value=sale_value,
@@ -573,6 +580,7 @@ def consume_stock(
         StockMovement.objects.select_for_update()
         .filter(
             sale_item_id=locked_sale_item.pk,
+            sale_item_component__isnull=True,
             movement_type="sale",
         )
         .order_by("stock_entry_id", "id")
@@ -604,6 +612,97 @@ def consume_stock(
         created_by=created_by,
         reason=f"Venda #{locked_sale_item.sale_id}",
         notes=None,
+    )
+
+
+def consume_component_stock(
+    *,
+    company,
+    sale_item_component,
+    entries_by_product,
+    quantity=None,
+    created_by=None,
+):
+    """Consume one immutable recipe-component snapshot through the shared FIFO."""
+    _require_atomic_transaction()
+    company_id = _company_id(company)
+
+    if getattr(sale_item_component, "pk", None) is None:
+        raise InvalidStockOperation(
+            "O componente da venda precisa estar salvo."
+        )
+
+    component_model = type(sale_item_component)
+    try:
+        locked_component = (
+            component_model.objects.select_for_update()
+            .select_related("sale_item__sale", "sale_item__product", "ingredient")
+            .get(pk=sale_item_component.pk)
+        )
+    except component_model.DoesNotExist:
+        raise InvalidStockOperation("Componente da venda inexistente.") from None
+
+    sale_item = locked_component.sale_item
+    product_id = locked_component.ingredient_id
+    if (
+        locked_component.company_id != company_id
+        or sale_item.company_id != company_id
+        or sale_item.sale.company_id != company_id
+        or sale_item.product.company_id != company_id
+        or locked_component.ingredient.company_id != company_id
+    ):
+        raise InvalidStockOperation(
+            "Venda, componente e ingrediente precisam pertencer à mesma empresa."
+        )
+
+    expected_quantity = _positive_decimal(
+        locked_component.physical_quantity_total,
+        field_name="quantidade física do componente",
+    )
+    requested = (
+        expected_quantity if quantity is None else _positive_decimal(quantity)
+    )
+    if requested != expected_quantity:
+        raise InvalidStockOperation(
+            "A baixa precisa ser igual ao snapshot físico do componente."
+        )
+
+    existing_movements = list(
+        StockMovement.objects.select_for_update()
+        .filter(
+            sale_item_component_id=locked_component.pk,
+            movement_type="sale",
+        )
+        .order_by("stock_entry_id", "id")
+    )
+    if existing_movements:
+        existing_quantity = sum(
+            (movement.quantity for movement in existing_movements),
+            ZERO,
+        )
+        if existing_quantity != requested or any(
+            movement.company_id != company_id
+            or movement.sale_item_id != sale_item.pk
+            or movement.product_id != product_id
+            or movement.stock_entry_id is None
+            for movement in existing_movements
+        ):
+            raise UntraceableSaleStock(
+                f"Os movimentos do componente #{locked_component.pk} são inconsistentes."
+            )
+        return existing_movements
+
+    return _create_negative_movements(
+        company_id=company_id,
+        product_id=product_id,
+        quantity=requested,
+        entries=entries_by_product.get(product_id, []),
+        movement_type="sale",
+        sale_item=sale_item,
+        sale_item_component=locked_component,
+        created_by=created_by,
+        reason=f"Venda #{sale_item.sale_id}: {sale_item.product.name}",
+        notes=f"Componente: {locked_component.ingredient.name}.",
     )
 
 
@@ -646,9 +745,39 @@ def restore_sale_stock(*, company, sale, created_by=None):
         )
         item_by_id[item.pk] = item
 
+    from sales.models import SaleItemComponent
+
+    component_snapshots = list(
+        SaleItemComponent.objects.select_for_update()
+        .filter(sale_item_id__in=item_by_id)
+        .select_related("ingredient")
+        .order_by("sale_item_id", "ingredient_id", "id")
+    )
+    component_by_id = {}
+    components_by_item = defaultdict(list)
+    for component in component_snapshots:
+        item = item_by_id.get(component.sale_item_id)
+        if (
+            item is None
+            or component.company_id != company_id
+            or component.ingredient.company_id != company_id
+        ):
+            raise InvalidStockOperation(
+                "Venda, componentes e ingredientes precisam pertencer à mesma empresa."
+            )
+        _positive_decimal(
+            component.physical_quantity_total,
+            field_name="quantidade física do componente",
+        )
+        component_by_id[component.pk] = component
+        components_by_item[item.pk].append(component)
+
     _lock_company_products(
         company_id=company_id,
-        product_ids=[item.product_id for item in sale_items],
+        product_ids=(
+            [item.product_id for item in sale_items]
+            + [component.ingredient_id for component in component_snapshots]
+        ),
     )
 
     item_ids = list(item_by_id)
@@ -671,21 +800,44 @@ def restore_sale_stock(*, company, sale, created_by=None):
         )
 
     totals_by_item = defaultdict(lambda: ZERO)
+    totals_by_component = defaultdict(lambda: ZERO)
     for movement in outbound_movements:
         item = item_by_id[movement.sale_item_id]
         movement_quantity = _positive_decimal(movement.quantity)
-        if (
-            movement.company_id != company_id
-            or movement.product_id != item.product_id
-            or movement.stock_entry_id is None
-        ):
+        if movement.company_id != company_id or movement.stock_entry_id is None:
             raise UntraceableSaleStock(
                 f"O movimento #{movement.pk} não possui rastreabilidade suficiente."
             )
-        totals_by_item[item.pk] += movement_quantity
+        if movement.sale_item_component_id is not None:
+            component = component_by_id.get(movement.sale_item_component_id)
+            if (
+                component is None
+                or component.sale_item_id != item.pk
+                or movement.product_id != component.ingredient_id
+            ):
+                raise UntraceableSaleStock(
+                    f"O movimento #{movement.pk} possui componente inconsistente."
+                )
+            totals_by_component[component.pk] += movement_quantity
+        else:
+            if movement.product_id != item.product_id:
+                raise UntraceableSaleStock(
+                    f"O movimento #{movement.pk} não corresponde ao produto vendido."
+                )
+            totals_by_item[item.pk] += movement_quantity
 
     for item in sale_items:
-        if totals_by_item[item.pk] != item.stock_quantity_for_traceability:
+        item_components = components_by_item[item.pk]
+        if item_components:
+            if totals_by_item[item.pk] != ZERO or any(
+                totals_by_component[component.pk]
+                != component.physical_quantity_total
+                for component in item_components
+            ):
+                raise UntraceableSaleStock(
+                    f"O item de venda #{item.pk} possui baixa de receita incompleta."
+                )
+        elif totals_by_item[item.pk] != item.stock_quantity_for_traceability:
             raise UntraceableSaleStock(
                 f"O item de venda #{item.pk} é legado ou possui baixa incompleta."
             )
@@ -712,6 +864,8 @@ def restore_sale_stock(*, company, sale, created_by=None):
                 or reversal.product_id != original.product_id
                 or reversal.stock_entry_id != original.stock_entry_id
                 or reversal.sale_item_id != original.sale_item_id
+                or reversal.sale_item_component_id
+                != original.sale_item_component_id
                 or reversal.quantity != original.quantity
             ):
                 raise UntraceableSaleStock(
@@ -781,6 +935,7 @@ def restore_sale_stock(*, company, sale, created_by=None):
                 product_id=original.product_id,
                 stock_entry=entry,
                 sale_item_id=original.sale_item_id,
+                sale_item_component_id=original.sale_item_component_id,
                 reversal_of=original,
                 movement_type="return_to_stock",
                 quantity=original.quantity,
@@ -1166,6 +1321,7 @@ __all__ = [
     "apply_negative_adjustment",
     "apply_positive_adjustment",
     "apply_stock_count",
+    "consume_component_stock",
     "consume_stock",
     "create_stock_entry",
     "get_stock_shortages",

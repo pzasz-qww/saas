@@ -1,7 +1,7 @@
 from django.contrib import admin
 from django.core.exceptions import ObjectDoesNotExist
 
-from .models import Sale, SaleItem
+from .models import Sale, SaleItem, SaleItemComponent
 
 
 class SaleItemInline(admin.TabularInline):
@@ -18,6 +18,26 @@ class SaleItemInline(admin.TabularInline):
         "total_cost",
     )
 
+    readonly_fields = fields
+
+    def has_add_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+class SaleItemComponentInline(admin.TabularInline):
+    model = SaleItemComponent
+    extra = 0
+    can_delete = False
+    fields = (
+        "ingredient",
+        "quantity_per_sale_unit",
+        "physical_quantity_total",
+        "physical_base_unit",
+        "source_component",
+    )
     readonly_fields = fields
 
     def has_add_permission(self, request, obj=None):
@@ -147,6 +167,7 @@ class SaleAdmin(admin.ModelAdmin):
 
 @admin.register(SaleItem)
 class SaleItemAdmin(admin.ModelAdmin):
+    inlines = [SaleItemComponentInline]
     list_display = (
         "sale",
         "company",

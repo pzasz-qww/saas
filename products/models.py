@@ -2,7 +2,7 @@ from decimal import Decimal
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
-from django.db import models
+from django.db import models, transaction
 from django.db.models import F, Q, Sum
 from django.utils import timezone
 
@@ -538,7 +538,12 @@ class ProductComponent(models.Model):
         if self.ingredient_id is not None:
             ingredient_data = (
                 Product.objects.filter(pk=self.ingredient_id)
-                .values("company_id", "inventory_role", "stock_dimension")
+                .values(
+                    "company_id",
+                    "inventory_role",
+                    "stock_dimension",
+                    "active",
+                )
                 .first()
             )
 
@@ -568,6 +573,8 @@ class ProductComponent(models.Model):
                 errors["ingredient"] = (
                     "Produtos preparados não podem ser usados como ingredientes."
                 )
+            elif not ingredient_data["active"]:
+                errors["ingredient"] = "O ingrediente precisa estar ativo."
 
         normalized = None
         if self.quantity is not None and self.unit:
@@ -583,8 +590,17 @@ class ProductComponent(models.Model):
                     "do ingrediente."
                 )
             else:
-                self.quantity = normalized.quantity
-                self.unit = normalized.base_unit
+                physical_quantum = Decimal("0.000001")
+                normalized_quantity = normalized.quantity.quantize(
+                    physical_quantum
+                )
+                if normalized_quantity != normalized.quantity:
+                    errors["quantity"] = (
+                        "A quantidade normalizada excede seis casas decimais."
+                    )
+                else:
+                    self.quantity = normalized_quantity
+                    self.unit = normalized.base_unit
 
         if self.pk is not None:
             original = (
@@ -611,15 +627,21 @@ class ProductComponent(models.Model):
                 {"quantity": "A quantidade deve ser informada sem usar float."}
             )
 
-        if self.company_id is None and self.product_id is not None:
-            self.company_id = (
-                Product.objects.filter(pk=self.product_id)
-                .values_list("company_id", flat=True)
-                .first()
-            )
+        with transaction.atomic():
+            if self.product_id is not None:
+                product = Product.objects.select_for_update().get(
+                    pk=self.product_id
+                )
+                if self.company_id is None:
+                    self.company_id = product.company_id
 
-        self.full_clean()
-        return super().save(*args, **kwargs)
+            self.full_clean()
+            return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        with transaction.atomic():
+            Product.objects.select_for_update().get(pk=self.product_id)
+            return super().delete(*args, **kwargs)
 
     def __str__(self):
         return f"{self.product}: {self.ingredient} ({self.quantity} {self.unit})"
@@ -862,6 +884,14 @@ class StockMovement(models.Model):
         related_name="stock_movements",
     )
 
+    sale_item_component = models.ForeignKey(
+        "sales.SaleItemComponent",
+        on_delete=models.PROTECT,
+        blank=True,
+        null=True,
+        related_name="stock_movements",
+    )
+
     reversal_of = models.OneToOneField(
         "self",
         on_delete=models.PROTECT,
@@ -909,6 +939,13 @@ class StockMovement(models.Model):
                 condition=Q(movement_type="sale"),
                 name="uniq_sale_item_stock_entry",
             ),
+            models.CheckConstraint(
+                condition=(
+                    Q(sale_item_component__isnull=True)
+                    | Q(sale_item__isnull=False)
+                ),
+                name="movement_component_requires_sale_item",
+            ),
         ]
 
     def clean(self):
@@ -949,19 +986,49 @@ class StockMovement(models.Model):
                     "A entrada deve pertencer à mesma empresa e ao mesmo produto."
                 )
 
+        sale_item_data = None
         if self.sale_item_id is not None:
             sale_item_model = self._meta.get_field("sale_item").remote_field.model
-            sale_item = (
+            sale_item_data = (
                 sale_item_model.objects.filter(pk=self.sale_item_id)
                 .values("company_id", "product_id")
                 .first()
             )
-            if sale_item and (
-                sale_item["company_id"] != self.company_id
-                or sale_item["product_id"] != self.product_id
-            ):
+
+        component_data = None
+        if self.sale_item_component_id is not None:
+            component_model = self._meta.get_field(
+                "sale_item_component"
+            ).remote_field.model
+            component_data = (
+                component_model.objects.filter(pk=self.sale_item_component_id)
+                .values("company_id", "sale_item_id", "ingredient_id")
+                .first()
+            )
+            if self.sale_item_id is None:
                 errors["sale_item"] = (
-                    "O item da venda deve pertencer à mesma empresa e produto."
+                    "Um movimento de componente precisa de um item da venda."
+                )
+            elif component_data and (
+                component_data["company_id"] != self.company_id
+                or component_data["sale_item_id"] != self.sale_item_id
+                or component_data["ingredient_id"] != self.product_id
+            ):
+                errors["sale_item_component"] = (
+                    "O componente da venda não corresponde ao movimento."
+                )
+        elif sale_item_data and (
+            sale_item_data["company_id"] != self.company_id
+            or sale_item_data["product_id"] != self.product_id
+        ):
+            errors["sale_item"] = (
+                "O item da venda deve pertencer à mesma empresa e produto."
+            )
+
+        if sale_item_data and sale_item_data["company_id"] != self.company_id:
+            if "sale_item" not in errors:
+                errors["sale_item"] = (
+                    "O item da venda deve pertencer à mesma empresa."
                 )
 
         if errors:

@@ -238,6 +238,14 @@ class ProductComponentTests(TestCase):
 
         self.assertEqual(component.ingredient, vodka)
 
+    def test_inactive_product_cannot_be_added_as_ingredient(self):
+        inactive = self.ingredient(name="Ingrediente inativo", dimension="count")
+        inactive.active = False
+        inactive.save(update_fields=["active"])
+
+        with self.assertRaisesMessage(ValidationError, "precisa estar ativo"):
+            self.component(inactive, "1", "unit")
+
     def test_composition_company_and_product_are_immutable(self):
         ingredient = self.ingredient(name="Limão", dimension="count")
         component = self.component(ingredient, "1", "unit")

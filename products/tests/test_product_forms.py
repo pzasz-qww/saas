@@ -2,7 +2,11 @@ from decimal import Decimal
 
 from django.test import TestCase
 
-from products.forms import ProductComponentForm, ProductCreateForm
+from products.forms import (
+    ProductComponentForm,
+    ProductComponentFormSet,
+    ProductCreateForm,
+)
 
 from .helpers import make_company, make_product, make_unit
 
@@ -132,3 +136,24 @@ class ProductComponentFormTests(TestCase):
 
         self.assertFalse(form.is_valid())
         self.assertIn("ingredient", form.errors)
+
+    def test_formset_rejects_duplicate_ingredients(self):
+        formset = ProductComponentFormSet(
+            data={
+                "components-TOTAL_FORMS": "2",
+                "components-INITIAL_FORMS": "0",
+                "components-MIN_NUM_FORMS": "0",
+                "components-MAX_NUM_FORMS": "1000",
+                "components-0-ingredient": str(self.volume_input.pk),
+                "components-0-quantity": "50",
+                "components-0-unit": "mL",
+                "components-1-ingredient": str(self.volume_input.pk),
+                "components-1-quantity": "100",
+                "components-1-unit": "mL",
+            },
+            prefix="components",
+            form_kwargs={"company": self.company},
+        )
+
+        self.assertFalse(formset.is_valid())
+        self.assertIn("mais de uma vez", str(formset.non_form_errors()))

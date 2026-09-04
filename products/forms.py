@@ -382,7 +382,7 @@ class ProductComponentForm(forms.Form):
         self.company = company
         super().__init__(*args, **kwargs)
         self.fields["ingredient"].queryset = (
-            Product.objects.filter(company=company)
+            Product.objects.filter(company=company, active=True)
             .exclude(inventory_role="prepared")
             .select_related("unit")
             .order_by("inventory_role", "name", "id")
@@ -431,8 +431,30 @@ class ProductComponentForm(forms.Form):
         return cleaned_data
 
 
+class BaseProductComponentFormSet(forms.BaseFormSet):
+    def clean(self):
+        super().clean()
+        if any(self.errors):
+            return
+
+        ingredient_ids = set()
+        for form in self.forms:
+            data = form.cleaned_data
+            if not data or data.get("DELETE"):
+                continue
+            ingredient = data.get("ingredient")
+            if ingredient is None:
+                continue
+            if ingredient.pk in ingredient_ids:
+                raise forms.ValidationError(
+                    f"O ingrediente {ingredient.name} foi informado mais de uma vez."
+                )
+            ingredient_ids.add(ingredient.pk)
+
+
 ProductComponentFormSet = formset_factory(
     ProductComponentForm,
+    formset=BaseProductComponentFormSet,
     extra=1,
     can_delete=True,
 )

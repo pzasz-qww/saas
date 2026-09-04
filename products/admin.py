@@ -1,5 +1,6 @@
 from django import forms
 from django.contrib import admin
+from django.db import transaction
 
 from accounts.permissions import get_user_company
 
@@ -444,7 +445,9 @@ class ProductComponentAdmin(CompanyScopedAdminMixin, admin.ModelAdmin):
             if db_field.name == "product":
                 queryset = queryset.filter(inventory_role="prepared")
             else:
-                queryset = queryset.exclude(inventory_role="prepared")
+                queryset = queryset.filter(active=True).exclude(
+                    inventory_role="prepared"
+                )
             kwargs["queryset"] = queryset.order_by("name")
 
         return super().formfield_for_foreignkey(db_field, request, **kwargs)
@@ -454,6 +457,18 @@ class ProductComponentAdmin(CompanyScopedAdminMixin, admin.ModelAdmin):
             obj.company = get_user_company(request.user)
 
         super().save_model(request, obj, form, change)
+
+    def delete_queryset(self, request, queryset):
+        product_ids = sorted(
+            set(queryset.values_list("product_id", flat=True))
+        )
+        with transaction.atomic():
+            list(
+                Product.objects.select_for_update()
+                .filter(pk__in=product_ids)
+                .order_by("id")
+            )
+            queryset.delete()
 
 
 @admin.register(StockEntry)
@@ -610,6 +625,7 @@ class StockMovementAdmin(admin.ModelAdmin):
         "company",
         "movement_type",
         "quantity",
+        "sale_item_component",
         "sale_value",
         "cost_value",
         "reason",
@@ -617,7 +633,14 @@ class StockMovementAdmin(admin.ModelAdmin):
         "created_at",
     )
 
-    search_fields = ("product__name", "company__name", "reason", "notes", "created_by__username")
+    search_fields = (
+        "product__name",
+        "sale_item_component__ingredient__name",
+        "company__name",
+        "reason",
+        "notes",
+        "created_by__username",
+    )
     list_filter = ("company", "product", "movement_type", "created_by", "created_at")
 
     readonly_fields = (
@@ -625,6 +648,7 @@ class StockMovementAdmin(admin.ModelAdmin):
         "product",
         "stock_entry",
         "sale_item",
+        "sale_item_component",
         "reversal_of",
         "movement_type",
         "quantity",
@@ -646,6 +670,7 @@ class StockMovementAdmin(admin.ModelAdmin):
                     "company",
                     "product",
                     "sale_item",
+                    "sale_item_component",
                     "reversal_of",
                     "movement_type",
                     "quantity",
