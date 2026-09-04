@@ -170,6 +170,24 @@
                             <td>
                                 {{ product.current_stock|floatformat:-6 }}
                                 {{ product.stock_base_unit_label }}
+                                {% if product.sale_availability %}
+                                    <div class="commercial-yield">
+                                        {% if product.sale_form == "dose" %}
+                                            {{ product.sale_availability.quantity_per_sale_unit|floatformat:-6 }} mL por dose<br>
+                                            Equivale a {{ product.sale_availability.available_sale_quantity|floatformat:0 }} doses completas
+                                        {% else %}
+                                            {{ product.sale_availability.quantity_per_sale_unit|floatformat:-6 }} g por porção<br>
+                                            Rendimento físico potencial:
+                                            {{ product.sale_availability.available_sale_quantity|floatformat:0 }} porções completas
+                                            {% if product.sale_availability.physical_remainder %}
+                                                (sobra {{ product.sale_availability.physical_remainder|floatformat:-6 }} g)
+                                            {% endif %}
+                                            {% if product.preparation_mode == "pre_portioned" %}
+                                                <br>Não indica porções já prontas.
+                                            {% endif %}
+                                        {% endif %}
+                                    </div>
+                                {% endif %}
                             </td>
 
                             <td>
@@ -245,6 +263,25 @@
                                 {{ product.current_stock|floatformat:-6 }}
                                 {{ product.stock_base_unit_label }}
                             </strong>
+
+                            {% if product.sale_availability %}
+                                <small class="commercial-yield">
+                                    {% if product.sale_form == "dose" %}
+                                        {{ product.sale_availability.quantity_per_sale_unit|floatformat:-6 }} mL por dose ·
+                                        {{ product.sale_availability.available_sale_quantity|floatformat:0 }} doses completas
+                                    {% else %}
+                                        {{ product.sale_availability.quantity_per_sale_unit|floatformat:-6 }} g por porção ·
+                                        rendimento físico potencial:
+                                        {{ product.sale_availability.available_sale_quantity|floatformat:0 }} porções completas
+                                        {% if product.sale_availability.physical_remainder %}
+                                            · sobra {{ product.sale_availability.physical_remainder|floatformat:-6 }} g
+                                        {% endif %}
+                                        {% if product.preparation_mode == "pre_portioned" %}
+                                            · não indica porções já prontas
+                                        {% endif %}
+                                    {% endif %}
+                                </small>
+                            {% endif %}
 
                             {% if product.minimum_quantity %}
                                 <small>

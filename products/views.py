@@ -38,6 +38,7 @@ from .category_names import clean_category_name
 from .category_services import resolve_category
 from .forms import ProductComponentFormSet, ProductCreateForm, StockEntryForm
 from .models import Product, ProductComponent, Unit
+from .sale_quantities import PhysicalSaleQuantityError, get_sale_availability
 from .services import (
     StockEntryValidationError,
     StockServiceError,
@@ -149,6 +150,18 @@ def stock_dashboard(request):
 
     company = request.current_company
     products = stock_report_products_for_company(company)
+    for product in products:
+        product.sale_availability = None
+        if product.sale_form not in {"dose", "portion"}:
+            continue
+        try:
+            product.sale_availability = get_sale_availability(
+                product,
+                product.current_stock,
+            )
+        except PhysicalSaleQuantityError:
+            # Legacy invalid configurations remain visible as physical stock.
+            pass
 
     return render(
         request,
