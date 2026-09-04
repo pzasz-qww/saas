@@ -4,13 +4,16 @@ from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
 from django.db.models import F, Q, Sum
+from django.utils import timezone
 
 from companies.models import Company
 
 from .category_names import clean_category_name, normalize_category_name
+from .money import InvalidMoneyValue, decimal_amount
 from .quantities import (
     QUANTITY_UNIT_CHOICES,
     QuantityConversionError,
+    base_unit_for_dimension,
     normalize_quantity,
 )
 
@@ -358,6 +361,17 @@ class Product(models.Model):
         ).aggregate(total=Sum("remaining_quantity"))
         return result["total"] or Decimal("0.00")
 
+    @property
+    def stock_base_unit(self):
+        return base_unit_for_dimension(self.stock_dimension) or "unit"
+
+    @property
+    def stock_base_unit_label(self):
+        return dict(QUANTITY_UNIT_CHOICES).get(
+            self.stock_base_unit,
+            self.stock_base_unit,
+        )
+
     def _get_annotated_decimal(self, *attribute_names):
         for attribute_name in attribute_names:
             if hasattr(self, attribute_name):
@@ -596,11 +610,6 @@ class ProductComponent(models.Model):
 
 
 class StockEntry(models.Model):
-    ENTRY_MODES = [
-        ("simple", "Entrada simples"),
-        ("detailed", "Entrada detalhada"),
-    ]
-
     company = models.ForeignKey(Company, on_delete=models.CASCADE)
 
     product = models.ForeignKey(
@@ -609,7 +618,19 @@ class StockEntry(models.Model):
         related_name="stock_entries",
     )
 
-    entry_mode = models.CharField(max_length=20, choices=ENTRY_MODES, default="simple")
+    input_quantity = models.DecimalField(
+        max_digits=20,
+        decimal_places=6,
+        default=0,
+        help_text="Quantidade originalmente informada pelo usu\u00e1rio.",
+    )
+
+    input_unit = models.CharField(
+        max_length=10,
+        choices=QUANTITY_UNIT_CHOICES,
+        default="",
+        help_text="Unidade originalmente informada pelo usu\u00e1rio.",
+    )
 
     total_cost = models.DecimalField(
         max_digits=20,
@@ -624,30 +645,23 @@ class StockEntry(models.Model):
         help_text="Quantidade gerada. Exemplo: 30 porções ou 24 unidades.",
     )
 
+    base_unit = models.CharField(
+        max_length=10,
+        choices=QUANTITY_UNIT_CHOICES,
+        default="",
+        help_text="Unidade-base da quantidade oficial do lote.",
+    )
+
     remaining_quantity = models.DecimalField(
         max_digits=20,
         decimal_places=6,
-        blank=True,
-        null=True,
-    )
-
-    package_quantity = models.DecimalField(
-        max_digits=20,
-        decimal_places=6,
-        blank=True,
-        null=True,
-        help_text="Opcional. Exemplo: 6 caixas, 3 sacos.",
-    )
-
-    package_cost = models.DecimalField(
-        max_digits=20,
-        decimal_places=10,
-        blank=True,
-        null=True,
-        help_text="Opcional. Exemplo: R$ 25 por saco.",
     )
 
     notes = models.TextField(blank=True, null=True)
+
+    entry_date = models.DateField(default=timezone.localdate)
+
+    expiration_date = models.DateField(blank=True, null=True)
 
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -662,8 +676,106 @@ class StockEntry(models.Model):
         verbose_name = "Entrada de estoque"
         verbose_name_plural = "Entradas de estoque"
         ordering = ["-created_at"]
+        constraints = [
+            models.CheckConstraint(
+                condition=Q(input_quantity__gt=0),
+                name="stock_entry_input_quantity_positive",
+            ),
+            models.CheckConstraint(
+                condition=Q(quantity_added__gt=0),
+                name="stock_entry_normalized_quantity_positive",
+            ),
+            models.CheckConstraint(
+                condition=Q(remaining_quantity__gte=0),
+                name="stock_entry_remaining_quantity_nonnegative",
+            ),
+            models.CheckConstraint(
+                condition=Q(remaining_quantity__lte=F("quantity_added")),
+                name="stock_entry_remaining_not_above_initial",
+            ),
+            models.CheckConstraint(
+                condition=Q(total_cost__gte=0),
+                name="stock_entry_total_cost_nonnegative",
+            ),
+        ]
+
+    def clean(self):
+        super().clean()
+        errors = {}
+
+        if self.product_id is not None:
+            product_company_id = self.product.company_id
+            if self.company_id not in (None, product_company_id):
+                errors["company"] = (
+                    "A entrada e o produto devem pertencer \u00e0 mesma empresa."
+                )
+            self.company_id = product_company_id
+
+            if self.input_quantity in (None, Decimal("0")):
+                self.input_quantity = self.quantity_added
+            if not self.input_unit:
+                self.input_unit = base_unit_for_dimension(
+                    self.product.stock_dimension
+                )
+
+        try:
+            normalized = normalize_quantity(self.input_quantity, self.input_unit)
+        except QuantityConversionError as error:
+            errors["input_quantity"] = str(error)
+            normalized = None
+
+        if normalized is not None and self.product_id is not None:
+            if normalized.dimension != self.product.stock_dimension:
+                errors["input_unit"] = (
+                    "A unidade informada \u00e9 incompat\u00edvel com a dimens\u00e3o "
+                    "de estoque deste produto."
+                )
+            else:
+                self.quantity_added = normalized.quantity
+                self.base_unit = normalized.base_unit
+
+        try:
+            self.total_cost = decimal_amount(self.total_cost)
+        except InvalidMoneyValue as error:
+            errors["total_cost"] = str(error)
+        else:
+            if self.total_cost < 0:
+                errors["total_cost"] = "O custo total n\u00e3o pode ser negativo."
+
+        if self.remaining_quantity is None and normalized is not None:
+            self.remaining_quantity = normalized.quantity
+
+        if self.remaining_quantity is not None:
+            try:
+                remaining = decimal_amount(self.remaining_quantity)
+            except InvalidMoneyValue:
+                errors["remaining_quantity"] = "O saldo do lote \u00e9 inv\u00e1lido."
+            else:
+                if remaining < 0:
+                    errors["remaining_quantity"] = (
+                        "O saldo do lote n\u00e3o pode ser negativo."
+                    )
+                elif normalized is not None and remaining > normalized.quantity:
+                    errors["remaining_quantity"] = (
+                        "O saldo do lote n\u00e3o pode superar a quantidade inicial."
+                    )
+
+        if errors:
+            raise ValidationError(errors)
 
     def save(self, *args, **kwargs):
+        if self.product_id is not None:
+            fallback_unit = base_unit_for_dimension(self.product.stock_dimension)
+            if self.input_quantity in (None, Decimal("0")):
+                self.input_quantity = self.quantity_added
+            if not self.input_unit:
+                self.input_unit = fallback_unit
+            if not self.base_unit:
+                self.base_unit = fallback_unit
+        if self.remaining_quantity is None:
+            self.remaining_quantity = self.quantity_added
+
+        self.full_clean()
         if self.product_id is not None:
             product_company_id = self.product.company_id
 
@@ -674,24 +786,22 @@ class StockEntry(models.Model):
 
             self.company_id = product_company_id
 
-        if (
-            self.entry_mode == "detailed"
-            and self.package_quantity
-            and self.package_cost
-        ):
-            self.total_cost = self.package_quantity * self.package_cost
-
-        if self.remaining_quantity is None:
-            self.remaining_quantity = self.quantity_added
-
         super().save(*args, **kwargs)
 
     @property
-    def unit_cost(self):
+    def normalized_quantity(self):
+        return self.quantity_added
+
+    @property
+    def normalized_unit_cost(self):
         if not self.quantity_added:
             return Decimal("0.00")
 
         return self.total_cost / self.quantity_added
+
+    @property
+    def unit_cost(self):
+        return self.normalized_unit_cost
 
     @property
     def potential_revenue(self):

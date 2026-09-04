@@ -18,7 +18,7 @@
 
     <div class="stock-entry-card">
         {% if menu_permissions.can_view_stock %}
-            <nav class="module-return" aria-label="Navegação do estoque">
+            <nav class="module-return" aria-label="Navega&ccedil;&atilde;o do estoque">
                 <a href="{% url 'products:stock_dashboard' %}" class="module-back-link">
                     Voltar para o estoque
                 </a>
@@ -27,108 +27,137 @@
 
         <h1>Nova entrada de estoque</h1>
         <p class="subtitle">
-            Busque o produto, selecione e lance a compra ou reposição.
+            Registre a quantidade comprada, o custo e os dados do lote.
         </p>
 
-        <form method="post" id="stock_entry_form">
+        <form method="post" id="stock_entry_form" novalidate>
             {% csrf_token %}
+            {{ form.product }}
 
-            <label for="product_search">Buscar produto</label>
+            {% if form.non_field_errors %}
+                <div class="form-error-summary" role="alert">
+                    {% for error in form.non_field_errors %}<p>{{ error }}</p>{% endfor %}
+                </div>
+            {% endif %}
+
+            <label for="product_search">Produto</label>
             <input
                 type="text"
                 id="product_search"
                 class="search-input"
-                placeholder="Ex: original, 600ml, cerveja, batata, jack..."
+                placeholder="Busque por nome, categoria ou unidade"
                 autocomplete="off"
             >
+            {% for error in form.product.errors %}
+                <p class="field-error" role="alert">&#9888; {{ error }}</p>
+            {% endfor %}
 
-            <div class="quick-tips">
-                Dica: a busca procura por nome, categoria, unidade e preço.
-                Exemplo: “600”, “cerveja”, “porção”, “heineken”, “original”.
+            <div
+                id="selected_product_box"
+                class="selected-product{% if selected_product %} is-visible{% endif %}"
+            >
+                {% if selected_product %}
+                    Produto selecionado: {{ selected_product.name }}<br>
+                    <small>
+                        {{ selected_product.category.name|default:"Sem categoria" }}
+                        &middot; {{ selected_product.get_stock_dimension_display }}
+                    </small>
+                {% endif %}
             </div>
 
-            <input type="hidden" name="product" id="selected_product_id">
-
-            <div id="selected_product_box" class="selected-product"></div>
-
             <div id="no_results" class="no-results">
-                Nenhum produto encontrado. Tente outro termo ou cadastre um novo produto.
+                Nenhum produto encontrado.
             </div>
 
             <div class="product-results" id="product_results">
                 {% for product in products %}
                     <button
                         type="button"
-                        class="product-card"
+                        class="product-card{% if selected_product.id == product.id %} selected{% endif %}"
                         data-id="{{ product.id }}"
                         data-name="{{ product.name }}"
                         data-category="{{ product.category.name|default:'' }}"
-                        data-unit="{{ product.unit }}"
+                        data-dimension="{{ product.stock_dimension }}"
+                        data-dimension-label="{{ product.get_stock_dimension_display }}"
                         data-price="{{ product.sale_price|floatformat:2 }}"
-                        data-search="{{ product.name|lower }} {{ product.category.name|default:''|lower }} {{ product.unit|lower }} {{ product.sale_price }}"
+                        data-search="{{ product.name|lower }} {{ product.category.name|default:''|lower }} {{ product.get_stock_dimension_display|lower }} {{ product.unit|lower }}"
                     >
-                        <div class="product-name">{{ product.name }}</div>
-                        <div class="product-meta">
+                        <span class="product-name">{{ product.name }}</span>
+                        <span class="product-meta">
                             {{ product.category.name|default:"Sem categoria" }}<br>
-                            Unidade: {{ product.unit }}<br>
-                            Venda: R$ {{ product.sale_price|floatformat:2 }}
-                        </div>
+                            Estoque: {{ product.get_stock_dimension_display }}
+                        </span>
                     </button>
                 {% empty %}
                     <p>Nenhum produto ativo cadastrado.</p>
                 {% endfor %}
             </div>
 
-            <label>Tipo de entrada</label>
-
-            <div class="mode-box">
-                <label class="mode-option">
-                    <input type="radio" name="entry_mode" value="simple" checked>
-                    Entrada simples
-                    <div class="help mode-help">
-                        Ex: investi R$ 150 e renderam 30 porções.
-                    </div>
-                </label>
-
-                <label class="mode-option">
-                    <input type="radio" name="entry_mode" value="detailed">
-                    Entrada detalhada
-                    <div class="help mode-help">
-                        Ex: 6 caixas de R$ 120 renderam 72 unidades.
-                    </div>
-                </label>
-            </div>
-
-            <div id="simple-fields">
-                <label for="total_cost">Valor investido</label>
-                <input type="text" name="total_cost" id="total_cost" placeholder="Ex: 150.00">
-                <div class="help">Use ponto ou vírgula. Ex: 150,00</div>
-            </div>
-
-            <div id="detailed-fields" class="hidden">
-                <label for="package_quantity">Quantidade de pacotes/caixas/sacos</label>
-                <input type="text" name="package_quantity" id="package_quantity" placeholder="Ex: 6">
-
-                <label for="package_cost">Valor por pacote/caixa/saco</label>
-                <input type="text" name="package_cost" id="package_cost" placeholder="Ex: 25.00">
-
-                <div class="help">
-                    O sistema calcula automaticamente o valor investido.
+            <div class="quantity-row">
+                <div class="field-group">
+                    <label for="{{ form.input_quantity.id_for_label }}">Quantidade</label>
+                    {{ form.input_quantity }}
+                    {% for error in form.input_quantity.errors %}
+                        <p class="field-error" role="alert">&#9888; {{ error }}</p>
+                    {% endfor %}
+                </div>
+                <div class="field-group unit-field">
+                    <label for="{{ form.input_unit.id_for_label }}">Unidade</label>
+                    {{ form.input_unit }}
+                    {% for error in form.input_unit.errors %}
+                        <p class="field-error" role="alert">&#9888; {{ error }}</p>
+                    {% endfor %}
                 </div>
             </div>
 
-            <label for="quantity_added">Quantidade gerada/adicionada</label>
-            <input type="text" name="quantity_added" id="quantity_added" required placeholder="Ex: 30">
-            <div class="help">
-                Exemplo: 30 porções, 24 unidades, 12 rolos, conforme a unidade cadastrada no produto.
+            <fieldset class="price-mode-box">
+                <legend>Como quer informar o pre&ccedil;o?</legend>
+                {% for radio in form.price_mode %}
+                    <label class="mode-option" for="{{ radio.id_for_label }}">
+                        {{ radio.tag }} {{ radio.choice_label }}
+                    </label>
+                {% endfor %}
+                {% for error in form.price_mode.errors %}
+                    <p class="field-error" role="alert">&#9888; {{ error }}</p>
+                {% endfor %}
+            </fieldset>
+
+            <label for="{{ form.price.id_for_label }}" id="price_label">Pre&ccedil;o</label>
+            <div class="price-input-wrap">
+                <span>R$</span>
+                {{ form.price }}
+                <span id="price_unit_suffix"></span>
+            </div>
+            {% for error in form.price.errors %}
+                <p class="field-error" role="alert">&#9888; {{ error }}</p>
+            {% endfor %}
+
+            <div id="calculation_preview" class="calculation-preview" aria-live="polite"></div>
+
+            <div class="date-row">
+                <div class="field-group">
+                    <label for="{{ form.entry_date.id_for_label }}">Data da entrada</label>
+                    {{ form.entry_date }}
+                    {% for error in form.entry_date.errors %}
+                        <p class="field-error" role="alert">&#9888; {{ error }}</p>
+                    {% endfor %}
+                </div>
+                <div class="field-group">
+                    <label for="{{ form.expiration_date.id_for_label }}">Validade (opcional)</label>
+                    {{ form.expiration_date }}
+                    {% for error in form.expiration_date.errors %}
+                        <p class="field-error" role="alert">&#9888; {{ error }}</p>
+                    {% endfor %}
+                </div>
             </div>
 
-            <label for="notes">Observação</label>
-            <textarea name="notes" id="notes" placeholder="Ex: compra no atacado, fornecedor X, reposição para sábado..."></textarea>
+            <label for="{{ form.notes.id_for_label }}">Observa&ccedil;&atilde;o (opcional)</label>
+            {{ form.notes }}
+            {% for error in form.notes.errors %}
+                <p class="field-error" role="alert">&#9888; {{ error }}</p>
+            {% endfor %}
 
-            <button type="submit" id="submit_button">
-                Salvar entrada de estoque
-            </button>
+            <button type="submit" id="submit_button">Registrar entrada</button>
         </form>
     </div>
 {% endblock %}

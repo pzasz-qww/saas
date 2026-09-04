@@ -1,11 +1,16 @@
 from collections import defaultdict
 from dataclasses import dataclass
+from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 
+from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.db.models import F, Sum
+from django.utils import timezone
 
+from .money import InvalidMoneyValue, decimal_amount
 from .models import Product, StockEntry, StockMovement
+from .quantities import QuantityConversionError, normalize_quantity
 
 
 ZERO = Decimal("0.00")
@@ -17,6 +22,14 @@ class StockServiceError(Exception):
 
 class InvalidStockOperation(StockServiceError):
     """Raised when an operation violates a stock invariant."""
+
+
+class StockEntryValidationError(InvalidStockOperation):
+    """A stock-entry error that can be attached to a specific form field."""
+
+    def __init__(self, message, *, field=None):
+        self.field = field
+        super().__init__(message)
 
 
 class InsufficientStock(StockServiceError):
@@ -716,6 +729,169 @@ def restore_sale_stock(*, company, sale, created_by=None):
     return return_movements
 
 
+def _stock_entry_date(value, *, field, label, required):
+    if value in (None, ""):
+        if required:
+            raise StockEntryValidationError(
+                f"Informe a {label}.",
+                field=field,
+            )
+        return None
+
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    if isinstance(value, str):
+        try:
+            return date.fromisoformat(value)
+        except ValueError:
+            pass
+
+    raise StockEntryValidationError(
+        f"Informe uma {label} v\u00e1lida.",
+        field=field,
+    )
+
+
+@transaction.atomic
+def create_stock_entry(
+    *,
+    company,
+    product,
+    input_quantity,
+    input_unit,
+    price_mode,
+    price,
+    entry_date=None,
+    expiration_date=None,
+    notes=None,
+    created_by=None,
+):
+    """Create one normalized lot while holding the product inventory mutex."""
+    company_id = _company_id(company)
+    product = _get_company_product(company_id=company_id, product=product)
+    products_by_id = _lock_company_products(
+        company_id=company_id,
+        product_ids=[product.pk],
+    )
+    product = products_by_id[product.pk]
+
+    if input_quantity in (None, ""):
+        raise StockEntryValidationError(
+            "Informe a quantidade.",
+            field="input_quantity",
+        )
+    try:
+        parsed_quantity = (
+            input_quantity
+            if isinstance(input_quantity, Decimal)
+            else Decimal(str(input_quantity).replace(",", "."))
+        )
+    except (InvalidOperation, TypeError, ValueError):
+        raise StockEntryValidationError(
+            "Informe uma quantidade v\u00e1lida.",
+            field="input_quantity",
+        ) from None
+    if not parsed_quantity.is_finite():
+        raise StockEntryValidationError(
+            "Informe uma quantidade v\u00e1lida.",
+            field="input_quantity",
+        )
+    if parsed_quantity <= ZERO:
+        raise StockEntryValidationError(
+            "A quantidade deve ser maior que zero.",
+            field="input_quantity",
+        )
+
+    if not input_unit:
+        raise StockEntryValidationError(
+            "Informe a unidade.",
+            field="input_unit",
+        )
+    try:
+        normalized = normalize_quantity(parsed_quantity, input_unit)
+    except QuantityConversionError:
+        raise StockEntryValidationError(
+            "Informe uma unidade v\u00e1lida.",
+            field="input_unit",
+        ) from None
+    if normalized.dimension != product.stock_dimension:
+        raise StockEntryValidationError(
+            "A unidade informada \u00e9 incompat\u00edvel com a dimens\u00e3o de "
+            "estoque deste produto.",
+            field="input_unit",
+        )
+
+    if price in (None, ""):
+        raise StockEntryValidationError(
+            "Informe o pre\u00e7o da entrada.",
+            field="price",
+        )
+    try:
+        parsed_price = decimal_amount(
+            price.replace(",", ".") if isinstance(price, str) else price
+        )
+    except InvalidMoneyValue:
+        raise StockEntryValidationError(
+            "Informe um pre\u00e7o v\u00e1lido.",
+            field="price",
+        ) from None
+    if parsed_price < ZERO:
+        raise StockEntryValidationError(
+            "O pre\u00e7o n\u00e3o pode ser negativo.",
+            field="price",
+        )
+
+    if price_mode == "total":
+        total_cost = parsed_price
+    elif price_mode == "per_unit":
+        total_cost = parsed_quantity * parsed_price
+    else:
+        raise StockEntryValidationError(
+            "Selecione como deseja informar o pre\u00e7o.",
+            field="price_mode",
+        )
+    if not total_cost.is_finite():
+        raise StockEntryValidationError(
+            "Informe um pre\u00e7o v\u00e1lido.",
+            field="price",
+        )
+
+    operational_date = _stock_entry_date(
+        timezone.localdate() if entry_date is None else entry_date,
+        field="entry_date",
+        label="data da entrada",
+        required=True,
+    )
+    expiration = _stock_entry_date(
+        expiration_date,
+        field="expiration_date",
+        label="validade",
+        required=False,
+    )
+
+    try:
+        return StockEntry.objects.create(
+            company_id=company_id,
+            product=product,
+            input_quantity=parsed_quantity,
+            input_unit=input_unit,
+            quantity_added=normalized.quantity,
+            base_unit=normalized.base_unit,
+            remaining_quantity=normalized.quantity,
+            total_cost=total_cost,
+            entry_date=operational_date,
+            expiration_date=expiration,
+            notes=(notes or "").strip() or None,
+            created_by=created_by,
+        )
+    except ValidationError as error:
+        raise StockEntryValidationError(
+            "; ".join(error.messages),
+        ) from None
+
+
 def _create_positive_adjustment(
     *,
     company_id,
@@ -729,7 +905,6 @@ def _create_positive_adjustment(
     entry = StockEntry.objects.create(
         company_id=company_id,
         product=product,
-        entry_mode="simple",
         total_cost=cost_value,
         quantity_added=quantity,
         remaining_quantity=quantity,
@@ -916,6 +1091,7 @@ __all__ = [
     "InvalidStockOperation",
     "StockConcurrencyError",
     "StockCountResult",
+    "StockEntryValidationError",
     "StockServiceError",
     "StockShortage",
     "UntraceableSaleStock",
@@ -924,6 +1100,7 @@ __all__ = [
     "apply_positive_adjustment",
     "apply_stock_count",
     "consume_stock",
+    "create_stock_entry",
     "get_stock_shortages",
     "lock_fifo_entries",
     "restore_sale_stock",

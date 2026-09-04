@@ -48,6 +48,17 @@ _UNIT_DEFINITIONS = {
     "L": _UnitDefinition("volume", "mL", Decimal("1000")),
 }
 
+UNITS_BY_DIMENSION = {
+    "count": ("unit",),
+    "weight": ("mg", "g", "kg"),
+    "volume": ("mL", "L"),
+}
+
+BASE_UNIT_BY_DIMENSION = {
+    dimension: _UNIT_DEFINITIONS[units[0]].base_unit
+    for dimension, units in UNITS_BY_DIMENSION.items()
+}
+
 _UNIT_ALIASES = {
     "un": "unit",
     "unid": "unit",
@@ -158,9 +169,23 @@ def normalize_quantity(quantity, unit):
     )
 
 
+def units_for_dimension(dimension):
+    """Return the canonical input units accepted by one stock dimension."""
+    return UNITS_BY_DIMENSION.get(dimension, ())
+
+
+def base_unit_for_dimension(dimension):
+    """Return the canonical storage unit for one stock dimension."""
+    return BASE_UNIT_BY_DIMENSION.get(dimension)
+
+
 __all__ = [
+    "BASE_UNIT_BY_DIMENSION",
     "NormalizedQuantity",
     "QUANTITY_UNIT_CHOICES",
     "QuantityConversionError",
+    "UNITS_BY_DIMENSION",
+    "base_unit_for_dimension",
     "normalize_quantity",
+    "units_for_dimension",
 ]

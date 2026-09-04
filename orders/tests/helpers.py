@@ -85,7 +85,6 @@ def make_entry(
     entry = StockEntry.objects.create(
         company=company or product.company,
         product=product,
-        entry_mode="simple",
         total_cost=D(total_cost) if total_cost is not None else quantity,
         quantity_added=quantity,
         remaining_quantity=(

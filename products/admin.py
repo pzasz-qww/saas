@@ -232,11 +232,13 @@ class StockEntryInline(admin.TabularInline):
     can_delete = False
 
     fields = (
-        "entry_mode",
+        "entry_date",
+        "expiration_date",
+        "input_quantity",
+        "input_unit",
         "total_cost",
         "quantity_added",
-        "package_quantity",
-        "package_cost",
+        "base_unit",
         "remaining_quantity",
         "notes",
     )
@@ -459,27 +461,42 @@ class StockEntryAdmin(admin.ModelAdmin):
     list_display = (
         "product",
         "company",
-        "total_cost",
+        "input_quantity",
+        "input_unit",
         "quantity_added",
+        "base_unit",
+        "total_cost",
         "remaining_quantity",
         "show_unit_cost",
+        "entry_date",
+        "expiration_date",
         "created_by",
         "show_expected_profit",
         "created_at",
     )
 
     search_fields = ("product__name", "company__name", "notes", "created_by__username")
-    list_filter = ("company", "product", "entry_mode", "created_by", "created_at")
+    list_filter = (
+        "company",
+        "product",
+        "input_unit",
+        "entry_date",
+        "expiration_date",
+        "created_by",
+        "created_at",
+    )
 
     readonly_fields = (
         "company",
         "product",
-        "entry_mode",
+        "entry_date",
+        "expiration_date",
+        "input_quantity",
+        "input_unit",
         "total_cost",
         "quantity_added",
+        "base_unit",
         "remaining_quantity",
-        "package_quantity",
-        "package_cost",
         "notes",
         "show_unit_cost",
         "show_potential_revenue",
@@ -497,7 +514,8 @@ class StockEntryAdmin(admin.ModelAdmin):
                 "fields": (
                     "company",
                     "product",
-                    "entry_mode",
+                    "entry_date",
+                    "expiration_date",
                 )
             },
         ),
@@ -505,8 +523,11 @@ class StockEntryAdmin(admin.ModelAdmin):
             "Quantidade e custo",
             {
                 "fields": (
+                    "input_quantity",
+                    "input_unit",
                     "total_cost",
                     "quantity_added",
+                    "base_unit",
                     "remaining_quantity",
                 )
             },
@@ -515,8 +536,6 @@ class StockEntryAdmin(admin.ModelAdmin):
             "Detalhes opcionais",
             {
                 "fields": (
-                    "package_quantity",
-                    "package_cost",
                     "notes",
                 ),
                 "classes": ("collapse",),

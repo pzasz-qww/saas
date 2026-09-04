@@ -2,12 +2,14 @@ from decimal import Decimal
 
 from django import forms
 from django.forms import formset_factory
+from django.utils import timezone
 
 from .models import Product, Unit
 from .quantities import (
     QUANTITY_UNIT_CHOICES,
     QuantityConversionError,
     normalize_quantity,
+    units_for_dimension,
 )
 
 
@@ -196,6 +198,134 @@ class ProductCreateForm(forms.Form):
         return cleaned_data
 
 
+class StockEntryForm(forms.Form):
+    PRICE_MODES = (
+        ("total", "Pre\u00e7o total"),
+        ("per_unit", "Pre\u00e7o por medida"),
+    )
+
+    product = forms.ModelChoiceField(
+        queryset=Product.objects.none(),
+        widget=forms.HiddenInput,
+        error_messages={
+            "required": "Selecione um produto.",
+            "invalid_choice": "Selecione um produto v\u00e1lido.",
+        },
+    )
+    input_quantity = CommaDecimalField(
+        max_digits=20,
+        decimal_places=6,
+        error_messages={
+            "required": "Informe a quantidade.",
+            "invalid": "Informe uma quantidade v\u00e1lida.",
+            "max_digits": "Informe uma quantidade v\u00e1lida.",
+            "max_decimal_places": "Use no m\u00e1ximo seis casas decimais.",
+        },
+    )
+    input_unit = forms.ChoiceField(
+        choices=(("", "Selecione"), *QUANTITY_UNIT_CHOICES),
+        error_messages={
+            "required": "Informe a unidade.",
+            "invalid_choice": "Informe uma unidade v\u00e1lida.",
+        },
+    )
+    price_mode = forms.ChoiceField(
+        choices=PRICE_MODES,
+        initial="total",
+        widget=forms.RadioSelect,
+        error_messages={
+            "required": "Selecione como deseja informar o pre\u00e7o.",
+            "invalid_choice": "Selecione uma forma de pre\u00e7o v\u00e1lida.",
+        },
+    )
+    price = CommaDecimalField(
+        max_digits=20,
+        decimal_places=10,
+        error_messages={
+            "required": "Informe o pre\u00e7o da entrada.",
+            "invalid": "Informe um pre\u00e7o v\u00e1lido.",
+            "max_digits": "Informe um pre\u00e7o v\u00e1lido.",
+            "max_decimal_places": "Use no m\u00e1ximo dez casas decimais.",
+        },
+    )
+    entry_date = forms.DateField(
+        widget=forms.DateInput(attrs={"type": "date"}),
+        error_messages={
+            "required": "Informe a data da entrada.",
+            "invalid": "Informe uma data de entrada v\u00e1lida.",
+        },
+    )
+    expiration_date = forms.DateField(
+        required=False,
+        widget=forms.DateInput(attrs={"type": "date"}),
+        error_messages={"invalid": "Informe uma validade v\u00e1lida."},
+    )
+    notes = forms.CharField(
+        required=False,
+        widget=forms.Textarea,
+    )
+
+    def __init__(self, *args, company, **kwargs):
+        self.company = company
+        super().__init__(*args, **kwargs)
+        self.fields["product"].queryset = Product.objects.filter(
+            company=company,
+            active=True,
+        ).order_by("name", "id")
+        self.fields["entry_date"].initial = timezone.localdate
+        self.fields["input_quantity"].widget.attrs.update(
+            {"inputmode": "decimal", "placeholder": "Ex: 30"}
+        )
+        self.fields["price"].widget.attrs.update(
+            {"inputmode": "decimal", "placeholder": "Ex: 750,00"}
+        )
+        self.fields["notes"].widget.attrs.update(
+            {"placeholder": "Ex: compra no atacado, reposi\u00e7\u00e3o para s\u00e1bado..."}
+        )
+
+    def clean_input_quantity(self):
+        quantity = self.cleaned_data["input_quantity"]
+        if not quantity.is_finite():
+            raise forms.ValidationError("Informe uma quantidade v\u00e1lida.")
+        if quantity <= 0:
+            raise forms.ValidationError("A quantidade deve ser maior que zero.")
+        return quantity
+
+    def clean_price(self):
+        price = self.cleaned_data["price"]
+        if not price.is_finite():
+            raise forms.ValidationError("Informe um pre\u00e7o v\u00e1lido.")
+        if price < 0:
+            raise forms.ValidationError("O pre\u00e7o n\u00e3o pode ser negativo.")
+        return price
+
+    def clean(self):
+        cleaned_data = super().clean()
+        product = cleaned_data.get("product")
+        quantity = cleaned_data.get("input_quantity")
+        unit = cleaned_data.get("input_unit")
+        if product is None or quantity is None or not unit:
+            return cleaned_data
+
+        if unit not in units_for_dimension(product.stock_dimension):
+            self.add_error(
+                "input_unit",
+                "A unidade informada \u00e9 incompat\u00edvel com a dimens\u00e3o de estoque "
+                "deste produto.",
+            )
+            return cleaned_data
+
+        try:
+            cleaned_data["normalized_quantity"] = normalize_quantity(
+                quantity,
+                unit,
+            )
+        except QuantityConversionError:
+            self.add_error("input_quantity", "Informe uma quantidade v\u00e1lida.")
+
+        return cleaned_data
+
+
 class ProductComponentForm(forms.Form):
     ingredient = forms.ModelChoiceField(
         queryset=Product.objects.none(),
@@ -286,4 +416,5 @@ __all__ = [
     "ProductComponentForm",
     "ProductComponentFormSet",
     "ProductCreateForm",
+    "StockEntryForm",
 ]

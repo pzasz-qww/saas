@@ -36,11 +36,13 @@ from accounts.permissions import (
 
 from .category_names import clean_category_name
 from .category_services import resolve_category
-from .forms import ProductComponentFormSet, ProductCreateForm
-from .models import Product, ProductComponent, StockEntry, Unit
+from .forms import ProductComponentFormSet, ProductCreateForm, StockEntryForm
+from .models import Product, ProductComponent, Unit
 from .services import (
+    StockEntryValidationError,
     StockServiceError,
     apply_stock_count,
+    create_stock_entry,
 )
 
 
@@ -208,7 +210,7 @@ def shopping_list(request):
             "status": status,
             "status_label": product.stock_status_label,
             "suggested_quantity": suggested_quantity,
-            "unit": product.unit,
+            "unit": product.stock_base_unit_label,
         }
 
         counts[status] += 1
@@ -347,7 +349,7 @@ def stock_report_pdf(request):
                 ),
                 cell_style,
             ),
-            escape(product.unit.symbol),
+            escape(product.stock_base_unit_label),
             format_quantity(current_stock),
             recommended_stock,
             status,
@@ -586,88 +588,77 @@ def product_create(request):
 @company_required
 def stock_entry_create(request):
     if not can_create_stock_entry(request.user):
-        messages.warning(request, "Você não tem permissão para inserir estoque.")
+        messages.warning(
+            request,
+            "Voc\u00ea n\u00e3o tem permiss\u00e3o para inserir estoque.",
+        )
         return redirect("products:stock_dashboard")
 
     company = request.current_company
-
     products = (
-        Product.objects
-        .filter(company=company, active=True)
+        Product.objects.filter(company=company, active=True)
         .select_related("category", "unit")
         .order_by("category__name", "name")
     )
 
-    if request.method == "POST":
-        product_id = request.POST.get("product")
-        entry_mode = request.POST.get("entry_mode", "simple")
-
-        total_cost = parse_decimal(request.POST.get("total_cost"))
-        quantity_added = parse_decimal(request.POST.get("quantity_added"))
-
-        package_quantity = parse_decimal(request.POST.get("package_quantity"))
-        package_cost = parse_decimal(request.POST.get("package_cost"))
-
-        notes = request.POST.get("notes", "").strip()
-
-        product = get_object_or_404(
+    submitted_product_id = (
+        request.POST.get("product") if request.method == "POST" else None
+    )
+    try:
+        submitted_product_id = int(submitted_product_id)
+    except (TypeError, ValueError):
+        submitted_product_id = None
+    if submitted_product_id is not None:
+        get_object_or_404(
             Product,
-            id=product_id,
+            pk=submitted_product_id,
             company=company,
             active=True,
         )
 
-        if quantity_added is None or quantity_added <= 0:
-            messages.warning(request, "Informe uma quantidade gerada válida.")
-            return redirect("products:stock_entry_create")
-
-        if entry_mode == "simple":
-            if total_cost is None or total_cost < 0:
-                messages.warning(request, "Informe um valor investido válido.")
-                return redirect("products:stock_entry_create")
-
-        if entry_mode == "detailed":
-            if package_quantity is None or package_quantity <= 0:
-                messages.warning(request, "Informe a quantidade de pacotes/caixas.")
-                return redirect("products:stock_entry_create")
-
-            if package_cost is None or package_cost < 0:
-                messages.warning(request, "Informe o valor por pacote/caixa.")
-                return redirect("products:stock_entry_create")
-
-            total_cost = package_quantity * package_cost
-
-        with transaction.atomic():
-            product = get_object_or_404(
-                Product.objects.select_for_update(),
-                id=product.pk,
+    form = StockEntryForm(
+        request.POST if request.method == "POST" else None,
+        company=company,
+    )
+    if request.method == "POST" and form.is_valid():
+        data = form.cleaned_data
+        try:
+            entry = create_stock_entry(
                 company=company,
-                active=True,
-            )
-            StockEntry.objects.create(
-                company=company,
-                product=product,
-                entry_mode=entry_mode,
-                total_cost=total_cost,
-                quantity_added=quantity_added,
-                package_quantity=package_quantity,
-                package_cost=package_cost,
-                notes=notes,
+                product=data["product"],
+                input_quantity=data["input_quantity"],
+                input_unit=data["input_unit"],
+                price_mode=data["price_mode"],
+                price=data["price"],
+                entry_date=data["entry_date"],
+                expiration_date=data.get("expiration_date"),
+                notes=data.get("notes"),
                 created_by=request.user,
             )
+        except StockEntryValidationError as error:
+            target_field = error.field if error.field in form.fields else None
+            form.add_error(target_field, str(error))
+        else:
+            messages.success(
+                request,
+                (
+                    f"Entrada criada: {entry.product.name} recebeu "
+                    f"{format_quantity(entry.input_quantity)} {entry.input_unit}."
+                ),
+            )
+            return redirect("products:stock_dashboard")
 
-        messages.success(
-            request,
-            f"Entrada criada: {product.name} recebeu {quantity_added} {product.unit}.",
-        )
-
-        return redirect("products:stock_dashboard")
+    selected_product = None
+    if form.is_bound and submitted_product_id is not None:
+        selected_product = products.filter(pk=submitted_product_id).first()
 
     return render(
         request,
         "products/stock_entry_form.html",
         {
+            "form": form,
             "products": products,
+            "selected_product": selected_product,
         },
     )
 
@@ -727,7 +718,7 @@ def stock_count_adjust(request):
             messages.success(
                 request,
                 f"{product.name}: ajuste positivo de {result.difference} "
-                f"{product.unit} aplicado.",
+                f"{product.stock_base_unit_label} aplicado.",
             )
 
             return redirect("products:stock_dashboard")
@@ -736,7 +727,8 @@ def stock_count_adjust(request):
 
         messages.warning(
             request,
-            f"{product.name}: ajuste negativo de {quantity_to_remove} {product.unit} aplicado.",
+            f"{product.name}: ajuste negativo de {quantity_to_remove} "
+            f"{product.stock_base_unit_label} aplicado.",
         )
 
         return redirect("products:stock_dashboard")
