@@ -38,6 +38,7 @@ from .category_names import clean_category_name
 from .category_services import resolve_category
 from .forms import ProductComponentFormSet, ProductCreateForm, StockEntryForm
 from .models import Product, ProductComponent, Unit
+from .recipe_services import RecipeServiceError, get_product_availability
 from .sale_quantities import PhysicalSaleQuantityError, get_sale_availability
 from .services import (
     StockEntryValidationError,
@@ -151,7 +152,30 @@ def stock_dashboard(request):
     company = request.current_company
     products = stock_report_products_for_company(company)
     for product in products:
+        product.display_stock_status = product.stock_status
+        product.display_stock_status_label = product.stock_status_label
         product.sale_availability = None
+        product.recipe_availability = None
+        product.recipe_error = None
+        if (
+            product.inventory_role == "prepared"
+            and product.preparation_mode == "on_demand"
+        ):
+            try:
+                product.recipe_availability = get_product_availability(product)
+                if product.recipe_availability.available_quantity > 0:
+                    product.display_stock_status = "ok"
+                    product.display_stock_status_label = "Disponível"
+                else:
+                    product.display_stock_status = "empty"
+                    product.display_stock_status_label = (
+                        "Esgotado por ingrediente"
+                    )
+            except RecipeServiceError as error:
+                product.recipe_error = str(error)
+                product.display_stock_status = "empty"
+                product.display_stock_status_label = "Receita inválida"
+            continue
         if product.sale_form not in {"dose", "portion"}:
             continue
         try:
@@ -519,6 +543,31 @@ def product_create(request):
             )
 
         data = form.cleaned_data
+        if (
+            data["inventory_role"] == "prepared"
+            and data.get("preparation_mode") == "on_demand"
+        ):
+            valid_component_count = 0
+            if components_submitted:
+                valid_component_count = sum(
+                    1
+                    for component_form in component_formset
+                    if component_form.cleaned_data
+                    and not component_form.cleaned_data.get("DELETE")
+                )
+            if valid_component_count == 0:
+                form.add_error(
+                    "preparation_mode",
+                    "Produto preparado sob demanda precisa de ao menos um componente.",
+                )
+                return _render_product_create(
+                    request,
+                    company=company,
+                    form=form,
+                    component_formset=component_formset,
+                    submission_failed=True,
+                )
+
         name = data["name"].strip()
         category_text = clean_category_name(data.get("category"))
 

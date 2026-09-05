@@ -214,6 +214,25 @@
     line-height: 1.4;
 }
 
+.recipe-availability {
+    margin-top: 6px;
+    color: #374151;
+    font-size: 12px;
+    line-height: 1.45;
+}
+
+.recipe-availability ul {
+    margin: 5px 0 0;
+    padding-left: 18px;
+}
+
+.recipe-error {
+    margin-top: 5px;
+    color: #991b1b;
+    font-size: 12px;
+    font-weight: bold;
+}
+
 .money {
     font-weight: bold;
 }

@@ -1,5 +1,9 @@
+from decimal import Decimal
+
 from django.test import TestCase
 from django.urls import reverse
+
+from products.models import ProductComponent
 
 from .helpers import make_company, make_entry, make_product, make_user
 
@@ -43,3 +47,52 @@ class StockCommercialYieldTests(TestCase):
         self.assertContains(response, "12 porções completas")
         self.assertContains(response, "sobra 200 g")
         self.assertContains(response, "não indica porções já prontas")
+
+    def test_on_demand_dashboard_shows_limiting_ingredient_and_yields(self):
+        drink = make_product(
+            company=self.company,
+            name="Caipirinha",
+            inventory_role="prepared",
+            preparation_mode="on_demand",
+        )
+        spirit = make_product(
+            company=self.company,
+            name="Cachaça",
+            inventory_role="input",
+            product_type="internal_use",
+            stock_dimension="volume",
+        )
+        lemon = make_product(
+            company=self.company,
+            name="Limão",
+            inventory_role="input",
+            product_type="internal_use",
+            stock_dimension="weight",
+        )
+        ProductComponent.objects.create(
+            company=self.company,
+            product=drink,
+            ingredient=spirit,
+            quantity=Decimal("50"),
+            unit="mL",
+        )
+        ProductComponent.objects.create(
+            company=self.company,
+            product=drink,
+            ingredient=lemon,
+            quantity=Decimal("80"),
+            unit="g",
+        )
+        make_entry(product=spirit, quantity="1000")
+        make_entry(product=lemon, quantity="640")
+
+        response = self.client.get(reverse("products:stock_dashboard"))
+
+        self.assertContains(response, "Disponível:")
+        self.assertContains(response, "8")
+        self.assertContains(response, "Limitante:")
+        self.assertContains(response, "Limão")
+        self.assertContains(response, "Cachaça:")
+        self.assertContains(response, "permite 20")
+        self.assertContains(response, "Disponível")
+        self.assertNotContains(response, "Esgotado por ingrediente")

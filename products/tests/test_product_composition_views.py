@@ -50,16 +50,18 @@ class ProductCompositionCreateViewTests(TestCase):
         self.assertEqual(product.unit.symbol, "un")
         self.assertTrue(product.active)
 
-    def test_prepared_product_can_be_saved_without_components(self):
+    def test_on_demand_product_without_components_is_rejected(self):
         response = self.client.post(
             reverse("products:product_create"),
             self.payload(),
         )
 
-        self.assertEqual(response.status_code, 302)
-        product = Product.objects.get()
-        self.assertEqual(product.inventory_role, "prepared")
-        self.assertFalse(product.components.exists())
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(
+            response,
+            "Produto preparado sob demanda precisa de ao menos um componente.",
+        )
+        self.assertFalse(Product.objects.exists())
 
     def test_one_partial_component_is_saved_and_normalized(self):
         unit = make_unit(company=self.company)

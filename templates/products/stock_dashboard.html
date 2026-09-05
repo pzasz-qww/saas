@@ -151,8 +151,8 @@
                             data-product-id="{{ product.id }}"
                             data-name="{{ product.name|escape }}"
                             data-category="{{ product.category.name|default:'' }}"
-                            data-status="{{ product.stock_status }}"
-                            data-search="{{ product.name|lower }} {{ product.category.name|default:''|lower }} {{ product.stock_base_unit_label|lower }} {{ product.stock_status_label|lower }} estoque recomendado {{ product.sale_price }}"
+                            data-status="{{ product.display_stock_status }}"
+                            data-search="{{ product.name|lower }} {{ product.category.name|default:''|lower }} {{ product.stock_base_unit_label|lower }} {{ product.display_stock_status_label|lower }} estoque recomendado {{ product.sale_price }}"
                         >
                             <td>
                                 <div class="product-name">{{ product.name }}</div>
@@ -168,6 +168,28 @@
                             </td>
 
                             <td>
+                                {% if product.recipe_availability %}
+                                    <strong>
+                                        Disponível:
+                                        {{ product.recipe_availability.available_quantity|floatformat:0 }}
+                                    </strong>
+                                    <div class="recipe-availability">
+                                        Limitante:
+                                        {{ product.recipe_availability.limiting_component.ingredient.name }}
+                                        <ul>
+                                            {% for component in product.recipe_availability.component_availability %}
+                                                <li>
+                                                    {{ component.ingredient.name }}:
+                                                    permite {{ component.available_quantity|floatformat:0 }}
+                                                    ({{ component.quantity_per_sale_unit|floatformat:-6 }}
+                                                    {{ component.base_unit }}/item)
+                                                </li>
+                                            {% endfor %}
+                                        </ul>
+                                    </div>
+                                {% elif product.recipe_error %}
+                                    <div class="recipe-error">{{ product.recipe_error }}</div>
+                                {% else %}
                                 {{ product.current_stock|floatformat:-6 }}
                                 {{ product.stock_base_unit_label }}
                                 {% if product.sale_availability %}
@@ -188,6 +210,7 @@
                                         {% endif %}
                                     </div>
                                 {% endif %}
+                                {% endif %}
                             </td>
 
                             <td>
@@ -196,8 +219,8 @@
                             </td>
 
                             <td>
-                                <span class="stock-status stock-status--{{ product.stock_status }}">
-                                    {{ product.stock_status_label }}
+                                <span class="stock-status stock-status--{{ product.display_stock_status }}">
+                                    {{ product.display_stock_status_label }}
                                 </span>
                             </td>
 
@@ -232,12 +255,12 @@
             <div class="stock-mobile-list" id="stock_mobile_list">
                 {% for product in products %}
                     <article
-                        class="stock-mobile-card stock-mobile-card--{{ product.stock_status }}"
+                        class="stock-mobile-card stock-mobile-card--{{ product.display_stock_status }}"
                         data-product-id="{{ product.id }}"
                         data-name="{{ product.name|escape }}"
                         data-category="{{ product.category.name|default:'' }}"
-                        data-status="{{ product.stock_status }}"
-                        data-search="{{ product.name|lower }} {{ product.category.name|default:''|lower }} {{ product.stock_base_unit_label|lower }} {{ product.stock_status_label|lower }} estoque recomendado {{ product.sale_price }}"
+                        data-status="{{ product.display_stock_status }}"
+                        data-search="{{ product.name|lower }} {{ product.category.name|default:''|lower }} {{ product.stock_base_unit_label|lower }} {{ product.display_stock_status_label|lower }} estoque recomendado {{ product.sale_price }}"
                     >
                         <div class="stock-mobile-card-header">
                             <div class="stock-mobile-product">
@@ -252,12 +275,31 @@
                                 </div>
                             </div>
 
-                            <span class="stock-mobile-status stock-mobile-status--{{ product.stock_status }}">
-                                {{ product.stock_status_label }}
+                            <span class="stock-mobile-status stock-mobile-status--{{ product.display_stock_status }}">
+                                {{ product.display_stock_status_label }}
                             </span>
                         </div>
 
                         <div class="stock-mobile-quantity-block">
+                            {% if product.recipe_availability %}
+                            <span>Disponível pelos ingredientes</span>
+                            <strong>
+                                {{ product.recipe_availability.available_quantity|floatformat:0 }}
+                            </strong>
+                            <small class="recipe-availability">
+                                Ingrediente limitante:
+                                {{ product.recipe_availability.limiting_component.ingredient.name }}
+                                {% for component in product.recipe_availability.component_availability %}
+                                    <br>{{ component.ingredient.name }}:
+                                    permite {{ component.available_quantity|floatformat:0 }}
+                                    ({{ component.quantity_per_sale_unit|floatformat:-6 }}
+                                    {{ component.base_unit }}/item)
+                                {% endfor %}
+                            </small>
+                            {% elif product.recipe_error %}
+                            <span>Receita indisponível</span>
+                            <small class="recipe-error">{{ product.recipe_error }}</small>
+                            {% else %}
                             <span>Quantidade atual</span>
                             <strong>
                                 {{ product.current_stock|floatformat:-6 }}
@@ -289,6 +331,7 @@
                                     {{ product.minimum_quantity|floatformat:-6 }}
                                     {{ product.stock_base_unit_label }}
                                 </small>
+                            {% endif %}
                             {% endif %}
                         </div>
 
