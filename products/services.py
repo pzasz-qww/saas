@@ -15,6 +15,7 @@ from .sale_quantities import get_physical_consumption
 
 
 ZERO = Decimal("0.00")
+STOCK_COST_QUANTUM = Decimal("0.0000000001")
 
 
 class StockServiceError(Exception):
@@ -109,6 +110,10 @@ def _nonnegative_decimal(value, *, field_name="valor"):
         )
 
     return parsed
+
+
+def _stock_cost(value):
+    return value.quantize(STOCK_COST_QUANTUM)
 
 
 def _require_atomic_transaction():
@@ -429,6 +434,8 @@ def _create_negative_movements(
     notes,
     sale_item=None,
     sale_item_component=None,
+    production=None,
+    production_consumption=None,
 ):
     requested = _positive_decimal(quantity)
     validate_stock_availability(
@@ -517,10 +524,12 @@ def _create_negative_movements(
                 stock_entry=entry,
                 sale_item=sale_item,
                 sale_item_component=sale_item_component,
+                production=production,
+                production_consumption=production_consumption,
                 movement_type=movement_type,
                 quantity=allocated_quantity,
                 sale_value=sale_value,
-                cost_value=allocated_quantity * entry.unit_cost,
+                cost_value=_stock_cost(allocated_quantity * entry.unit_cost),
                 reason=reason,
                 notes=notes,
                 created_by=created_by,
@@ -528,6 +537,35 @@ def _create_negative_movements(
         )
 
     return movements
+
+
+def calculate_fifo_cost(*, product_id, quantity, entries):
+    """Calculate the exact cost of a FIFO request without mutating its entries."""
+    requested = _positive_decimal(quantity)
+    validate_stock_availability(
+        product_quantities={product_id: requested},
+        entries_by_product={product_id: entries},
+    )
+    remaining = requested
+    cost = ZERO
+    for entry in entries:
+        if remaining <= ZERO:
+            break
+        available = _nonnegative_decimal(
+            entry.remaining_quantity,
+            field_name=f"saldo da entrada #{entry.pk}",
+        )
+        allocated = min(available, remaining)
+        if allocated > ZERO:
+            cost += _stock_cost(allocated * entry.unit_cost)
+            remaining -= allocated
+    if remaining > ZERO:
+        raise InsufficientStock(
+            product_id=product_id,
+            requested=requested,
+            available=requested - remaining,
+        )
+    return cost
 
 
 def consume_stock(
@@ -703,6 +741,85 @@ def consume_component_stock(
         created_by=created_by,
         reason=f"Venda #{sale_item.sale_id}: {sale_item.product.name}",
         notes=f"Componente: {locked_component.ingredient.name}.",
+    )
+
+
+def consume_production_stock(
+    *,
+    company,
+    production_consumption,
+    entries_by_product,
+    created_by=None,
+):
+    """Consume one production snapshot with the shared FIFO engine."""
+    _require_atomic_transaction()
+    company_id = _company_id(company)
+    if getattr(production_consumption, "pk", None) is None:
+        raise InvalidStockOperation("O consumo da produção precisa estar salvo.")
+
+    consumption_model = type(production_consumption)
+    try:
+        locked_consumption = (
+            consumption_model.objects.select_for_update()
+            .select_related("production__product", "ingredient")
+            .get(pk=production_consumption.pk)
+        )
+    except consumption_model.DoesNotExist:
+        raise InvalidStockOperation("Consumo da produção inexistente.") from None
+
+    production = locked_consumption.production
+    ingredient_id = locked_consumption.ingredient_id
+    if (
+        locked_consumption.company_id != company_id
+        or production.company_id != company_id
+        or production.product.company_id != company_id
+        or locked_consumption.ingredient.company_id != company_id
+        or production.status != production.STATUS_COMPLETED
+    ):
+        raise InvalidStockOperation(
+            "Produção, consumo e ingrediente precisam estar ativos na mesma empresa."
+        )
+
+    requested = _positive_decimal(
+        locked_consumption.actual_quantity,
+        field_name="consumo real",
+    )
+    existing_movements = list(
+        StockMovement.objects.select_for_update()
+        .filter(
+            production_consumption_id=locked_consumption.pk,
+            movement_type="production_consumption",
+        )
+        .order_by("stock_entry_id", "id")
+    )
+    if existing_movements:
+        existing_quantity = sum(
+            (movement.quantity for movement in existing_movements),
+            ZERO,
+        )
+        if existing_quantity != requested or any(
+            movement.company_id != company_id
+            or movement.production_id != production.pk
+            or movement.product_id != ingredient_id
+            or movement.stock_entry_id is None
+            for movement in existing_movements
+        ):
+            raise InvalidStockOperation(
+                f"Os movimentos do consumo #{locked_consumption.pk} são inconsistentes."
+            )
+        return existing_movements
+
+    return _create_negative_movements(
+        company_id=company_id,
+        product_id=ingredient_id,
+        quantity=requested,
+        entries=entries_by_product.get(ingredient_id, []),
+        movement_type="production_consumption",
+        production=production,
+        production_consumption=locked_consumption,
+        created_by=created_by,
+        reason=f"Produção #{production.pk}: {production.product.name}",
+        notes=f"Ingrediente: {locked_consumption.ingredient.name}.",
     )
 
 
@@ -1321,7 +1438,9 @@ __all__ = [
     "apply_negative_adjustment",
     "apply_positive_adjustment",
     "apply_stock_count",
+    "calculate_fifo_cost",
     "consume_component_stock",
+    "consume_production_stock",
     "consume_stock",
     "create_stock_entry",
     "get_stock_shortages",

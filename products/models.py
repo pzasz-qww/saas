@@ -647,6 +647,426 @@ class ProductComponent(models.Model):
         return f"{self.product}: {self.ingredient} ({self.quantity} {self.unit})"
 
 
+class Production(models.Model):
+    STATUS_COMPLETED = "completed"
+    STATUS_REVERSED = "reversed"
+    STATUS_CHOICES = (
+        (STATUS_COMPLETED, "Concluída"),
+        (STATUS_REVERSED, "Revertida"),
+    )
+
+    company = models.ForeignKey(
+        Company,
+        on_delete=models.CASCADE,
+        related_name="productions",
+    )
+    product = models.ForeignKey(
+        Product,
+        on_delete=models.PROTECT,
+        related_name="productions",
+    )
+    planned_quantity = models.DecimalField(max_digits=20, decimal_places=6)
+    produced_quantity = models.DecimalField(max_digits=20, decimal_places=6)
+    production_date = models.DateField(default=timezone.localdate)
+    expiration_date = models.DateField(blank=True, null=True)
+    total_cost = models.DecimalField(max_digits=20, decimal_places=10)
+    notes = models.TextField(blank=True, null=True)
+    status = models.CharField(
+        max_length=20,
+        choices=STATUS_CHOICES,
+        default=STATUS_COMPLETED,
+    )
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        blank=True,
+        null=True,
+        related_name="productions_created",
+    )
+    reversed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        blank=True,
+        null=True,
+        related_name="productions_reversed",
+    )
+    reversed_at = models.DateTimeField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "Produção"
+        verbose_name_plural = "Produções"
+        ordering = ("-production_date", "-id")
+        constraints = [
+            models.CheckConstraint(
+                condition=Q(planned_quantity__gt=0),
+                name="production_planned_quantity_positive",
+            ),
+            models.CheckConstraint(
+                condition=Q(produced_quantity__gt=0),
+                name="production_produced_quantity_positive",
+            ),
+            models.CheckConstraint(
+                condition=Q(total_cost__gte=0),
+                name="production_total_cost_nonnegative",
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=("company", "product", "status"),
+                name="production_company_product_idx",
+            ),
+        ]
+
+    def clean(self):
+        super().clean()
+        errors = {}
+        product_data = None
+        if self.product_id is not None:
+            product_data = (
+                Product.objects.filter(pk=self.product_id)
+                .values("company_id", "inventory_role", "preparation_mode")
+                .first()
+            )
+        if product_data is not None:
+            if self.company_id is None:
+                self.company_id = product_data["company_id"]
+            elif self.company_id != product_data["company_id"]:
+                errors["product"] = "O produto pertence a outra empresa."
+            if self._state.adding and not (
+                product_data["inventory_role"] == "prepared"
+                and product_data["preparation_mode"] == "pre_portioned"
+            ):
+                errors["product"] = (
+                    "Somente produtos preparados antecipadamente podem ser produzidos."
+                )
+
+        for field_name, label in (
+            ("planned_quantity", "A quantidade planejada"),
+            ("produced_quantity", "A quantidade produzida"),
+        ):
+            value = getattr(self, field_name)
+            if isinstance(value, float) or not isinstance(value, Decimal):
+                errors[field_name] = f"{label} é inválida."
+            elif not value.is_finite() or value <= 0:
+                errors[field_name] = f"{label} deve ser positiva."
+
+        if isinstance(self.total_cost, float) or not isinstance(
+            self.total_cost,
+            Decimal,
+        ):
+            errors["total_cost"] = "O custo total é inválido."
+        elif not self.total_cost.is_finite() or self.total_cost < 0:
+            errors["total_cost"] = "O custo total não pode ser negativo."
+
+        if (
+            self.production_date
+            and self.expiration_date
+            and self.expiration_date < self.production_date
+        ):
+            errors["expiration_date"] = (
+                "A validade não pode ser anterior à data da produção."
+            )
+
+        if self.status == self.STATUS_COMPLETED:
+            if self.reversed_at is not None or self.reversed_by_id is not None:
+                errors["status"] = (
+                    "Uma produção concluída não pode possuir dados de reversão."
+                )
+        elif self.status == self.STATUS_REVERSED and self.reversed_at is None:
+            errors["reversed_at"] = "Informe quando a produção foi revertida."
+
+        if self.pk is not None:
+            original = (
+                type(self).objects.filter(pk=self.pk)
+                .values_list(
+                    "company_id",
+                    "product_id",
+                    "planned_quantity",
+                    "produced_quantity",
+                    "production_date",
+                    "expiration_date",
+                    "total_cost",
+                    "notes",
+                    "created_by_id",
+                )
+                .first()
+            )
+            current = (
+                self.company_id,
+                self.product_id,
+                self.planned_quantity,
+                self.produced_quantity,
+                self.production_date,
+                self.expiration_date,
+                self.total_cost,
+                self.notes,
+                self.created_by_id,
+            )
+            if original is not None and original != current:
+                errors["product"] = (
+                    "Os dados históricos de uma produção não podem ser alterados."
+                )
+
+        if errors:
+            raise ValidationError(errors)
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        return super().save(*args, **kwargs)
+
+    @property
+    def theoretical_yield(self):
+        return self.planned_quantity
+
+    @property
+    def actual_yield(self):
+        return self.produced_quantity
+
+    @property
+    def yield_percentage(self):
+        if not self.planned_quantity:
+            return Decimal("0")
+        return self.produced_quantity * Decimal("100") / self.planned_quantity
+
+    @property
+    def yield_difference(self):
+        return self.planned_quantity - self.produced_quantity
+
+    @property
+    def unit_cost(self):
+        if not self.produced_quantity:
+            return Decimal("0")
+        return self.total_cost / self.produced_quantity
+
+    def __str__(self):
+        return f"Produção #{self.pk} — {self.product.name}"
+
+
+class ProductionConsumption(models.Model):
+    company = models.ForeignKey(
+        Company,
+        on_delete=models.CASCADE,
+        related_name="production_consumptions",
+    )
+    production = models.ForeignKey(
+        Production,
+        on_delete=models.PROTECT,
+        related_name="consumptions",
+    )
+    source_component = models.ForeignKey(
+        ProductComponent,
+        on_delete=models.SET_NULL,
+        blank=True,
+        null=True,
+        related_name="production_snapshots",
+    )
+    ingredient = models.ForeignKey(
+        Product,
+        on_delete=models.PROTECT,
+        related_name="production_consumptions",
+    )
+    quantity_per_planned_unit = models.DecimalField(
+        max_digits=20,
+        decimal_places=6,
+    )
+    theoretical_quantity = models.DecimalField(max_digits=20, decimal_places=6)
+    actual_quantity = models.DecimalField(max_digits=20, decimal_places=6)
+    loss_quantity = models.DecimalField(
+        max_digits=20,
+        decimal_places=6,
+        default=0,
+    )
+    base_unit = models.CharField(max_length=10, choices=QUANTITY_UNIT_CHOICES)
+    total_cost = models.DecimalField(max_digits=20, decimal_places=10)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "Consumo da produção"
+        verbose_name_plural = "Consumos das produções"
+        ordering = ("production_id", "ingredient_id", "id")
+        constraints = [
+            models.UniqueConstraint(
+                fields=("production", "ingredient"),
+                name="uniq_production_ingredient",
+            ),
+            models.CheckConstraint(
+                condition=Q(quantity_per_planned_unit__gt=0),
+                name="prodcons_quantity_per_unit_positive",
+            ),
+            models.CheckConstraint(
+                condition=Q(theoretical_quantity__gt=0),
+                name="prodcons_theoretical_positive",
+            ),
+            models.CheckConstraint(
+                condition=Q(actual_quantity__gt=0),
+                name="prodcons_actual_positive",
+            ),
+            models.CheckConstraint(
+                condition=Q(loss_quantity__gte=0),
+                name="prodcons_loss_nonnegative",
+            ),
+            models.CheckConstraint(
+                condition=Q(loss_quantity__lte=F("actual_quantity")),
+                name="prodcons_loss_not_above_actual",
+            ),
+            models.CheckConstraint(
+                condition=Q(total_cost__gte=0),
+                name="prodcons_cost_nonnegative",
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=("company", "production"),
+                name="prodcons_company_prod_idx",
+            ),
+        ]
+
+    def clean(self):
+        super().clean()
+        errors = {}
+        production_data = None
+        if self.production_id is not None:
+            production_data = (
+                Production.objects.filter(pk=self.production_id)
+                .values("company_id", "product_id", "planned_quantity")
+                .first()
+            )
+        ingredient_data = None
+        if self.ingredient_id is not None:
+            ingredient_data = (
+                Product.objects.filter(pk=self.ingredient_id)
+                .values("company_id", "stock_dimension")
+                .first()
+            )
+
+        if production_data is not None:
+            if self.company_id is None:
+                self.company_id = production_data["company_id"]
+            elif self.company_id != production_data["company_id"]:
+                errors["production"] = "A produção pertence a outra empresa."
+
+        if ingredient_data is not None:
+            if ingredient_data["company_id"] != self.company_id:
+                errors["ingredient"] = "O ingrediente pertence a outra empresa."
+            expected_unit = base_unit_for_dimension(
+                ingredient_data["stock_dimension"]
+            )
+            if self.base_unit != expected_unit:
+                errors["base_unit"] = (
+                    "A unidade física não corresponde ao estoque do ingrediente."
+                )
+
+        decimal_fields = (
+            "quantity_per_planned_unit",
+            "theoretical_quantity",
+            "actual_quantity",
+            "loss_quantity",
+            "total_cost",
+        )
+        for field_name in decimal_fields:
+            value = getattr(self, field_name)
+            if isinstance(value, float) or not isinstance(value, Decimal):
+                errors[field_name] = "Informe um valor decimal válido."
+            elif not value.is_finite():
+                errors[field_name] = "Informe um valor decimal finito."
+
+        if isinstance(self.quantity_per_planned_unit, Decimal) and (
+            self.quantity_per_planned_unit <= 0
+        ):
+            errors["quantity_per_planned_unit"] = "A quantidade deve ser positiva."
+        if isinstance(self.theoretical_quantity, Decimal) and (
+            self.theoretical_quantity <= 0
+        ):
+            errors["theoretical_quantity"] = "A quantidade deve ser positiva."
+        if isinstance(self.actual_quantity, Decimal) and self.actual_quantity <= 0:
+            errors["actual_quantity"] = "A quantidade deve ser positiva."
+        if isinstance(self.loss_quantity, Decimal) and self.loss_quantity < 0:
+            errors["loss_quantity"] = "A perda não pode ser negativa."
+        if (
+            isinstance(self.loss_quantity, Decimal)
+            and isinstance(self.actual_quantity, Decimal)
+            and self.loss_quantity > self.actual_quantity
+        ):
+            errors["loss_quantity"] = "A perda não pode superar o consumo real."
+        if isinstance(self.total_cost, Decimal) and self.total_cost < 0:
+            errors["total_cost"] = "O custo não pode ser negativo."
+
+        if (
+            production_data is not None
+            and isinstance(self.quantity_per_planned_unit, Decimal)
+            and isinstance(self.theoretical_quantity, Decimal)
+            and self.theoretical_quantity
+            != production_data["planned_quantity"]
+            * self.quantity_per_planned_unit
+        ):
+            errors["theoretical_quantity"] = (
+                "A necessidade teórica não corresponde ao planejamento."
+            )
+
+        if self.source_component_id is not None and production_data is not None:
+            source_data = (
+                ProductComponent.objects.filter(pk=self.source_component_id)
+                .values("company_id", "product_id", "ingredient_id")
+                .first()
+            )
+            if source_data and (
+                source_data["company_id"] != self.company_id
+                or source_data["product_id"] != production_data["product_id"]
+                or source_data["ingredient_id"] != self.ingredient_id
+            ):
+                errors["source_component"] = (
+                    "O componente de origem não corresponde ao consumo."
+                )
+
+        if self.pk is not None:
+            original = (
+                type(self).objects.filter(pk=self.pk)
+                .values_list(
+                    "company_id",
+                    "production_id",
+                    "source_component_id",
+                    "ingredient_id",
+                    "quantity_per_planned_unit",
+                    "theoretical_quantity",
+                    "actual_quantity",
+                    "loss_quantity",
+                    "base_unit",
+                    "total_cost",
+                )
+                .first()
+            )
+            current = (
+                self.company_id,
+                self.production_id,
+                self.source_component_id,
+                self.ingredient_id,
+                self.quantity_per_planned_unit,
+                self.theoretical_quantity,
+                self.actual_quantity,
+                self.loss_quantity,
+                self.base_unit,
+                self.total_cost,
+            )
+            if original is not None and original != current:
+                errors["production"] = (
+                    "O consumo histórico de uma produção não pode ser alterado."
+                )
+
+        if errors:
+            raise ValidationError(errors)
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        return super().save(*args, **kwargs)
+
+    def __str__(self):
+        return (
+            f"{self.production}: {self.ingredient.name} "
+            f"({self.actual_quantity} {self.base_unit})"
+        )
+
+
 class StockEntry(models.Model):
     company = models.ForeignKey(Company, on_delete=models.CASCADE)
 
@@ -654,6 +1074,14 @@ class StockEntry(models.Model):
         Product,
         on_delete=models.CASCADE,
         related_name="stock_entries",
+    )
+
+    production = models.OneToOneField(
+        Production,
+        on_delete=models.PROTECT,
+        blank=True,
+        null=True,
+        related_name="output_stock_entry",
     )
 
     input_quantity = models.DecimalField(
@@ -754,6 +1182,69 @@ class StockEntry(models.Model):
             if not self.input_unit:
                 self.input_unit = base_unit_for_dimension(
                     self.product.stock_dimension
+                )
+
+        if self.production_id is not None:
+            production_data = (
+                Production.objects.filter(pk=self.production_id)
+                .values("company_id", "product_id", "production_date", "expiration_date")
+                .first()
+            )
+            if production_data and (
+                production_data["company_id"] != self.company_id
+                or production_data["product_id"] != self.product_id
+            ):
+                errors["production"] = (
+                    "O lote produzido não corresponde à empresa e ao produto."
+                )
+            elif production_data and (
+                self.entry_date != production_data["production_date"]
+                or self.expiration_date != production_data["expiration_date"]
+            ):
+                errors["production"] = (
+                    "As datas do lote precisam corresponder à produção."
+                )
+
+        if self.pk is not None:
+            original = (
+                type(self).objects.filter(pk=self.pk)
+                .values_list(
+                    "company_id",
+                    "product_id",
+                    "production_id",
+                    "input_quantity",
+                    "input_unit",
+                    "total_cost",
+                    "quantity_added",
+                    "base_unit",
+                    "notes",
+                    "entry_date",
+                    "expiration_date",
+                    "created_by_id",
+                )
+                .first()
+            )
+            current = (
+                self.company_id,
+                self.product_id,
+                self.production_id,
+                self.input_quantity,
+                self.input_unit,
+                self.total_cost,
+                self.quantity_added,
+                self.base_unit,
+                self.notes,
+                self.entry_date,
+                self.expiration_date,
+                self.created_by_id,
+            )
+            if (
+                original is not None
+                and (original[2] is not None or self.production_id is not None)
+                and original != current
+            ):
+                errors["production"] = (
+                    "Os dados de origem de um lote produzido não podem ser alterados."
                 )
 
         try:
@@ -863,6 +1354,10 @@ class StockMovement(models.Model):
         ("adjustment_negative", "Ajuste negativo"),
         ("return_to_stock", "Retorno ao estoque"),
         ("stock_count", "Conferência"),
+        ("production_consumption", "Consumo em produção"),
+        ("production_output", "Entrada por produção"),
+        ("production_return", "Retorno de produção"),
+        ("production_output_reversal", "Reversão do lote produzido"),
     ]
 
     company = models.ForeignKey(Company, on_delete=models.CASCADE)
@@ -886,6 +1381,22 @@ class StockMovement(models.Model):
 
     sale_item_component = models.ForeignKey(
         "sales.SaleItemComponent",
+        on_delete=models.PROTECT,
+        blank=True,
+        null=True,
+        related_name="stock_movements",
+    )
+
+    production = models.ForeignKey(
+        Production,
+        on_delete=models.PROTECT,
+        blank=True,
+        null=True,
+        related_name="stock_movements",
+    )
+
+    production_consumption = models.ForeignKey(
+        ProductionConsumption,
         on_delete=models.PROTECT,
         blank=True,
         null=True,
@@ -945,6 +1456,20 @@ class StockMovement(models.Model):
                     | Q(sale_item__isnull=False)
                 ),
                 name="movement_component_requires_sale_item",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    Q(production_consumption__isnull=True)
+                    | Q(production__isnull=False)
+                ),
+                name="movement_consumption_requires_prod",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    Q(production__isnull=True)
+                    | Q(sale_item__isnull=True)
+                ),
+                name="movement_sale_or_production",
             ),
         ]
 
@@ -1030,6 +1555,92 @@ class StockMovement(models.Model):
                 errors["sale_item"] = (
                     "O item da venda deve pertencer à mesma empresa."
                 )
+
+        production_data = None
+        if self.production_id is not None:
+            production_data = (
+                Production.objects.filter(pk=self.production_id)
+                .values("company_id", "product_id")
+                .first()
+            )
+            if self.sale_item_id is not None:
+                errors["production"] = (
+                    "Um movimento não pode pertencer a venda e produção ao mesmo tempo."
+                )
+            if production_data and production_data["company_id"] != self.company_id:
+                errors["production"] = "A produção pertence a outra empresa."
+
+        if self.production_consumption_id is not None:
+            consumption_data = (
+                ProductionConsumption.objects.filter(
+                    pk=self.production_consumption_id
+                )
+                .values("company_id", "production_id", "ingredient_id")
+                .first()
+            )
+            if self.production_id is None:
+                errors["production"] = (
+                    "O consumo precisa estar ligado à produção."
+                )
+            elif consumption_data and (
+                consumption_data["company_id"] != self.company_id
+                or consumption_data["production_id"] != self.production_id
+                or consumption_data["ingredient_id"] != self.product_id
+            ):
+                errors["production_consumption"] = (
+                    "O consumo da produção não corresponde ao movimento."
+                )
+        elif production_data and self.movement_type in {
+            "production_output",
+            "production_output_reversal",
+        } and production_data["product_id"] != self.product_id:
+            errors["production"] = (
+                "O lote produzido deve pertencer ao produto da produção."
+            )
+
+        production_types = {
+            "production_consumption",
+            "production_output",
+            "production_return",
+            "production_output_reversal",
+        }
+        component_types = {
+            "production_consumption",
+            "production_return",
+        }
+        reversal_types = {
+            "production_return",
+            "production_output_reversal",
+        }
+        if self.movement_type in production_types and self.production_id is None:
+            errors["production"] = "O movimento precisa estar ligado à produção."
+        if self.movement_type not in production_types and self.production_id is not None:
+            errors["production"] = (
+                "Somente movimentos de produção podem estar ligados a uma produção."
+            )
+        if (
+            self.movement_type in component_types
+            and self.production_consumption_id is None
+        ):
+            errors["production_consumption"] = (
+                "O movimento precisa identificar o consumo da produção."
+            )
+        if (
+            self.movement_type in production_types - component_types
+            and self.production_consumption_id is not None
+        ):
+            errors["production_consumption"] = (
+                "O movimento do lote produzido não pode apontar para um ingrediente."
+            )
+        if self.movement_type in reversal_types and self.reversal_of_id is None:
+            errors["reversal_of"] = "O movimento de reversão precisa indicar sua origem."
+        if (
+            self.movement_type in production_types - reversal_types
+            and self.reversal_of_id is not None
+        ):
+            errors["reversal_of"] = (
+                "O movimento original da produção não pode ser uma reversão."
+            )
 
         if errors:
             raise ValidationError(errors)

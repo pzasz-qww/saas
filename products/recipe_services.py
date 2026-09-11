@@ -77,16 +77,6 @@ class ProductAvailability:
     source: str
 
 
-@dataclass(frozen=True, slots=True)
-class _SaleRequest:
-    product: Product
-    quantity: Decimal
-
-    @property
-    def product_id(self):
-        return self.product.pk
-
-
 def _company_id(company):
     company_id = getattr(company, "pk", company)
     if company_id is None:
@@ -318,30 +308,90 @@ def build_sale_consumption_plan(*, items, company, lock=False):
     )
 
 
-def expand_product_components(product, sale_quantity):
-    """Return the normalized physical components for one prepared sale line."""
-    plan = build_sale_consumption_plan(
-        items=[_SaleRequest(product=product, quantity=sale_quantity)],
-        company=product.company,
+def expand_product_components(product, sale_quantity, *, lock=False):
+    """Expand one prepared product's recipe into physical component quantities."""
+    if lock and not connection.in_atomic_block:
+        raise InvalidOperationalRecipe(
+            "A expansão bloqueada precisa ocorrer dentro de uma transação."
+        )
+    if product.pk is None or product.company_id is None:
+        raise InvalidOperationalRecipe("O produto preparado precisa estar salvo.")
+
+    product_queryset = Product.objects.filter(
+        pk=product.pk,
+        company_id=product.company_id,
     )
-    return plan.lines[0].components
-
-
-def get_product_availability(product):
-    """Calculate direct or component-limited commercial availability."""
-    if not (
-        product.inventory_role == "prepared"
-        and product.preparation_mode == "on_demand"
-    ):
-        availability = get_sale_availability(product)
-        return ProductAvailability(
-            product=product,
-            available_quantity=availability.available_sale_quantity,
-            limiting_component=None,
-            component_availability=(),
-            source="own_stock",
+    if lock:
+        product_queryset = product_queryset.select_for_update()
+    locked_product = product_queryset.first()
+    if locked_product is None:
+        raise InvalidOperationalRecipe("O produto não pertence à empresa informada.")
+    if locked_product.inventory_role != "prepared":
+        raise InvalidOperationalRecipe(
+            "Somente produtos preparados podem possuir receita operacional."
         )
 
+    try:
+        commercial_quantity = get_physical_consumption(
+            locked_product,
+            sale_quantity,
+        ).sale_quantity
+    except PhysicalSaleQuantityError as error:
+        raise InvalidOperationalRecipe(str(error)) from error
+
+    component_queryset = ProductComponent.objects.filter(
+        company_id=locked_product.company_id,
+        product_id=locked_product.pk,
+    ).order_by("ingredient_id", "id")
+    if lock:
+        component_queryset = component_queryset.select_for_update()
+    components = list(component_queryset)
+    if not components:
+        raise InvalidOperationalRecipe(
+            f"O produto preparado {locked_product.name} não possui componentes."
+        )
+
+    ingredient_ids = [component.ingredient_id for component in components]
+    ingredients = _load_products(
+        company_id=locked_product.company_id,
+        product_ids=ingredient_ids,
+        lock=lock,
+    )
+    expanded_components = []
+    seen_ingredients = set()
+    for component in components:
+        if component.ingredient_id in seen_ingredients:
+            raise InvalidOperationalRecipe(
+                "A receita possui ingredientes duplicados."
+            )
+        seen_ingredients.add(component.ingredient_id)
+        ingredient = ingredients[component.ingredient_id]
+        normalized = _normalized_component(
+            component,
+            product=locked_product,
+            ingredient=ingredient,
+        )
+        quantity_per_sale_unit = _exact_physical_quantity(
+            normalized.quantity,
+            label=f"A quantidade do componente {ingredient.name}",
+        )
+        total_quantity = _exact_physical_quantity(
+            quantity_per_sale_unit * commercial_quantity,
+            label=f"O consumo total do componente {ingredient.name}",
+        )
+        expanded_components.append(
+            ExpandedProductComponent(
+                source_component=component,
+                ingredient=ingredient,
+                quantity_per_sale_unit=quantity_per_sale_unit,
+                total_quantity=total_quantity,
+                base_unit=normalized.base_unit,
+            )
+        )
+    return tuple(expanded_components)
+
+
+def _component_based_availability(product, *, source):
     components = expand_product_components(product, Decimal("1"))
     ingredient_ids = [component.ingredient.pk for component in components]
     stock_by_product = dict(
@@ -383,7 +433,40 @@ def get_product_availability(product):
         available_quantity=limiting.available_quantity,
         limiting_component=limiting,
         component_availability=tuple(component_availability),
-        source="components",
+        source=source,
+    )
+
+
+def get_product_availability(product):
+    """Calculate direct or component-limited commercial availability."""
+    if not (
+        product.inventory_role == "prepared"
+        and product.preparation_mode == "on_demand"
+    ):
+        availability = get_sale_availability(product)
+        return ProductAvailability(
+            product=product,
+            available_quantity=availability.available_sale_quantity,
+            limiting_component=None,
+            component_availability=(),
+            source="own_stock",
+        )
+
+    return _component_based_availability(product, source="components")
+
+
+def get_production_potential(product):
+    """Return theoretical additional output for a pre-portioned product."""
+    if not (
+        product.inventory_role == "prepared"
+        and product.preparation_mode == "pre_portioned"
+    ):
+        raise InvalidOperationalRecipe(
+            "O potencial de produção exige produto preparado antecipadamente."
+        )
+    return _component_based_availability(
+        product,
+        source="production_potential",
     )
 
 
@@ -398,4 +481,5 @@ __all__ = [
     "build_sale_consumption_plan",
     "expand_product_components",
     "get_product_availability",
+    "get_production_potential",
 ]
