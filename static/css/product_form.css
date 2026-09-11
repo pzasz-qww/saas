@@ -41,6 +41,58 @@
     margin-bottom: 16px;
 }
 
+.operational-summary {
+    margin: 0 0 22px;
+    padding: 16px;
+    border: 1px solid #bfdbfe;
+    border-radius: 12px;
+    background: #eff6ff;
+    color: #1e3a5f;
+}
+
+.operational-summary h2 {
+    font-size: 16px;
+}
+
+.operational-summary p,
+.operational-summary ul {
+    margin-bottom: 0;
+}
+
+.summary-value strong {
+    font-size: 22px;
+}
+
+.summary-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+}
+
+.summary-grid div {
+    padding: 12px;
+    border-radius: 10px;
+    background: white;
+}
+
+.summary-grid span,
+.summary-grid strong,
+.operational-warning span {
+    display: block;
+}
+
+.summary-grid strong {
+    margin-top: 4px;
+    font-size: 18px;
+}
+
+.operational-warning {
+    padding: 12px;
+    border-radius: 10px;
+    background: #fef3c7;
+    color: #92400e;
+}
+
 .form-section,
 .advanced-content {
     padding-top: 6px;
@@ -132,6 +184,43 @@
     font-size: 13px;
 }
 
+.confirmation-dialog {
+    max-width: 480px;
+    width: calc(100% - 32px);
+    box-sizing: border-box;
+    padding: 22px;
+    border: 0;
+    border-radius: 14px;
+    box-shadow: 0 20px 60px rgba(15, 23, 42, 0.25);
+}
+
+.confirmation-dialog::backdrop {
+    background: rgba(15, 23, 42, 0.55);
+}
+
+.confirmation-dialog h2 {
+    margin-top: 0;
+}
+
+.confirmation-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    margin-top: 20px;
+}
+
+.product-form-card .confirmation-actions button {
+    width: auto;
+}
+
+.product-form-card .danger-button {
+    background: #b91c1c;
+}
+
+.product-form-card .danger-button:hover {
+    background: #991b1b;
+}
+
 .product-form-card .secondary-button:hover,
 .product-form-card .remove-component:hover {
     background: #d1d5db;
@@ -145,6 +234,19 @@
 
     .components-heading {
         flex-direction: column;
+    }
+
+    .summary-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .confirmation-actions {
+        align-items: stretch;
+        flex-direction: column-reverse;
+    }
+
+    .product-form-card .confirmation-actions button {
+        width: 100%;
     }
 }
 

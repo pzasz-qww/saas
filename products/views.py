@@ -476,12 +476,10 @@ PRODUCT_ADVANCED_FIELDS = {
     "category",
     "product_type",
     "unit",
-    "inventory_role",
     "stock_dimension",
     "unit_description",
     "dose_ml",
     "portion_g",
-    "preparation_mode",
     "minimum_quantity",
     "active",
 }
@@ -499,37 +497,148 @@ def _add_validation_error(target_form, error):
         target_form.add_error(None, field_message)
 
 
-def _render_product_create(
+def _product_form_initial(product):
+    return {
+        "name": product.name,
+        "sale_price": product.sale_price,
+        "sale_form": product.sale_form,
+        "category": (
+            product.category.name
+            if product.category_id
+            else product.category_legacy or ""
+        ),
+        "product_type": product.product_type,
+        "unit": product.unit_id,
+        "inventory_role": product.inventory_role,
+        "stock_dimension": product.stock_dimension,
+        "unit_description": product.unit_description,
+        "dose_ml": product.dose_ml,
+        "portion_g": product.portion_g,
+        "preparation_mode": product.preparation_mode or "",
+        "minimum_quantity": product.minimum_quantity,
+        "active": product.active,
+    }
+
+
+def _component_form_initial(components):
+    return [
+        {
+            "component_id": component.pk,
+            "ingredient": component.ingredient_id,
+            "quantity": component.quantity,
+            "unit": component.unit,
+        }
+        for component in components
+    ]
+
+
+def _resolve_product_unit(*, company, data):
+    unit = data.get("unit")
+    if unit is not None:
+        return unit
+
+    legacy_units = {
+        "count": ("Unidade", "un"),
+        "weight": ("Grama", "g"),
+        "volume": ("Mililitro", "mL"),
+    }
+    unit_name, unit_symbol = legacy_units[data["stock_dimension"]]
+    unit, _created = Unit.objects.get_or_create(
+        company=company,
+        symbol=unit_symbol,
+        defaults={"name": unit_name},
+    )
+    return unit
+
+
+def _apply_product_data(*, product, data, category, unit):
+    product.name = data["name"].strip()
+    product.category = category
+    product.category_legacy = clean_category_name(data.get("category")) or None
+    product.product_type = data["product_type"]
+    product.inventory_role = data["inventory_role"]
+    product.sale_form = data["sale_form"]
+    product.stock_dimension = data["stock_dimension"]
+    product.unit_description = data.get("unit_description", "").strip()
+    product.dose_ml = data.get("dose_ml")
+    product.portion_g = data.get("portion_g")
+    product.preparation_mode = data.get("preparation_mode")
+    product.unit = unit
+    product.sale_price = data["sale_price"]
+    product.minimum_quantity = data["minimum_quantity"]
+    product.active = data["active"]
+
+
+def _product_availability_context(product):
+    context = {
+        "edit_availability": None,
+        "edit_availability_error": None,
+        "edit_ready_availability": None,
+        "edit_production_potential": None,
+        "edit_production_error": None,
+    }
+    if product is None or product.inventory_role != "prepared":
+        return context
+
+    if product.preparation_mode == "on_demand":
+        try:
+            context["edit_availability"] = get_product_availability(product)
+        except RecipeServiceError as error:
+            context["edit_availability_error"] = str(error)
+        return context
+
+    if product.preparation_mode == "pre_portioned":
+        try:
+            context["edit_ready_availability"] = get_sale_availability(
+                product,
+                product.current_stock,
+            )
+        except PhysicalSaleQuantityError as error:
+            context["edit_availability_error"] = str(error)
+        try:
+            context["edit_production_potential"] = get_production_potential(product)
+        except RecipeServiceError as error:
+            context["edit_production_error"] = str(error)
+    return context
+
+
+def _render_product_form(
     request,
     *,
     company,
     form,
     component_formset,
+    product=None,
     submission_failed=False,
 ):
     advanced_errors = any(
         field_name in form.errors for field_name in PRODUCT_ADVANCED_FIELDS
     )
+    advanced_errors = advanced_errors or "preparation_mode" in form.errors
     advanced_errors = advanced_errors or any(
         bool(component_errors) for component_errors in component_formset.errors
     )
     advanced_errors = advanced_errors or bool(component_formset.non_form_errors())
 
+    context = {
+        "form": form,
+        "component_formset": component_formset,
+        "product": product,
+        "editing": product is not None,
+        "submission_failed": submission_failed,
+        "advanced_errors": advanced_errors,
+        "units": Unit.objects.filter(company=company).order_by("name"),
+        "product_types": Product.PRODUCT_TYPES,
+        "inventory_roles": Product.INVENTORY_ROLES,
+        "sale_forms": Product.SALE_FORMS,
+        "stock_dimensions": Product.STOCK_DIMENSIONS,
+        "preparation_modes": Product.PREPARATION_MODES,
+    }
+    context.update(_product_availability_context(product))
     return render(
         request,
         "products/product_form.html",
-        {
-            "form": form,
-            "component_formset": component_formset,
-            "submission_failed": submission_failed,
-            "advanced_errors": advanced_errors,
-            "units": Unit.objects.filter(company=company).order_by("name"),
-            "product_types": Product.PRODUCT_TYPES,
-            "inventory_roles": Product.INVENTORY_ROLES,
-            "sale_forms": Product.SALE_FORMS,
-            "stock_dimensions": Product.STOCK_DIMENSIONS,
-            "preparation_modes": Product.PREPARATION_MODES,
-        },
+        context,
     )
 
 
@@ -568,7 +677,7 @@ def product_create(request):
             component_formset.is_valid() if components_submitted else True
         )
         if not forms_are_valid or not components_are_valid:
-            return _render_product_create(
+            return _render_product_form(
                 request,
                 company=company,
                 form=form,
@@ -594,7 +703,7 @@ def product_create(request):
                     "preparation_mode",
                     "Produto preparado sob demanda precisa de ao menos um componente.",
                 )
-                return _render_product_create(
+                return _render_product_form(
                     request,
                     company=company,
                     form=form,
@@ -612,19 +721,7 @@ def product_create(request):
                     company=company,
                     raw_name=category_text,
                 )
-                unit = data.get("unit")
-                if unit is None:
-                    legacy_units = {
-                        "count": ("Unidade", "un"),
-                        "weight": ("Grama", "g"),
-                        "volume": ("Mililitro", "mL"),
-                    }
-                    unit_name, unit_symbol = legacy_units[data["stock_dimension"]]
-                    unit, _created = Unit.objects.get_or_create(
-                        company=company,
-                        symbol=unit_symbol,
-                        defaults={"name": unit_name},
-                    )
+                unit = _resolve_product_unit(company=company, data=data)
 
                 product = Product.objects.create(
                     company=company,
@@ -661,7 +758,7 @@ def product_create(request):
                         )
         except ValidationError as error:
             _add_validation_error(validation_target, error)
-            return _render_product_create(
+            return _render_product_form(
                 request,
                 company=company,
                 form=form,
@@ -672,11 +769,186 @@ def product_create(request):
         messages.success(request, f"Produto cadastrado: {name}.")
         return redirect("products:stock_dashboard")
 
-    return _render_product_create(
+    return _render_product_form(
         request,
         company=company,
         form=form,
         component_formset=component_formset,
+    )
+
+
+@login_required
+@company_required
+def product_edit(request, product_id):
+    if not can_create_stock_entry(request.user):
+        messages.warning(request, "Você não tem permissão para editar produtos.")
+        return redirect("products:stock_dashboard")
+
+    company = request.current_company
+    product = get_object_or_404(
+        Product.objects.select_related("category", "unit"),
+        pk=product_id,
+        company=company,
+    )
+    components = list(
+        ProductComponent.objects.filter(company=company, product=product)
+        .select_related("ingredient")
+        .order_by("id")
+    )
+    component_ids = [component.pk for component in components]
+    form = ProductCreateForm(
+        request.POST if request.method == "POST" else None,
+        company=company,
+        initial=_product_form_initial(product),
+    )
+    component_formset = ProductComponentFormSet(
+        request.POST if request.method == "POST" else None,
+        prefix="components",
+        initial=_component_form_initial(components),
+        form_kwargs={"company": company},
+        existing_component_ids=component_ids,
+    )
+
+    if request.method == "POST":
+        if "category_id" in request.POST:
+            messages.warning(request, "Os dados informados para o produto são inválidos.")
+            return redirect("products:product_edit", product_id=product.pk)
+
+        posted_unit_id = request.POST.get("unit")
+        if posted_unit_id:
+            get_object_or_404(Unit, id=posted_unit_id, company=company)
+
+        forms_are_valid = form.is_valid()
+        components_are_valid = component_formset.is_valid()
+        if not forms_are_valid or not components_are_valid:
+            return _render_product_form(
+                request,
+                company=company,
+                form=form,
+                component_formset=component_formset,
+                product=product,
+                submission_failed=True,
+            )
+
+        data = form.cleaned_data
+        valid_component_count = sum(
+            1
+            for component_form in component_formset
+            if component_form.cleaned_data
+            and not component_form.cleaned_data.get("DELETE")
+        )
+        if (
+            data["inventory_role"] == "prepared"
+            and data.get("preparation_mode") == "on_demand"
+            and valid_component_count == 0
+        ):
+            form.add_error(
+                "preparation_mode",
+                "Produto preparado sob demanda precisa de ao menos um componente.",
+            )
+        elif data["inventory_role"] != "prepared" and valid_component_count:
+            form.add_error(
+                "inventory_role",
+                "Remova os ingredientes antes de alterar para um produto não preparado.",
+            )
+
+        if form.errors:
+            return _render_product_form(
+                request,
+                company=company,
+                form=form,
+                component_formset=component_formset,
+                product=product,
+                submission_failed=True,
+            )
+
+        validation_target = form
+        try:
+            with transaction.atomic():
+                locked_product = Product.objects.select_for_update().get(
+                    pk=product.pk,
+                    company=company,
+                )
+                locked_components = list(
+                    ProductComponent.objects.select_for_update()
+                    .filter(company=company, product=locked_product)
+                    .order_by("id")
+                )
+                locked_by_id = {
+                    component.pk: component for component in locked_components
+                }
+                if set(locked_by_id) != set(component_ids):
+                    raise ValidationError(
+                        "A receita mudou desde que a página foi aberta. "
+                        "Recarregue e tente novamente."
+                    )
+
+                category_text = clean_category_name(data.get("category"))
+                category = resolve_category(
+                    company=company,
+                    raw_name=category_text,
+                )
+                unit = _resolve_product_unit(company=company, data=data)
+                _apply_product_data(
+                    product=locked_product,
+                    data=data,
+                    category=category,
+                    unit=unit,
+                )
+                locked_product.save()
+
+                for component_form in component_formset:
+                    component_data = component_form.cleaned_data
+                    if not component_data:
+                        continue
+
+                    validation_target = component_form
+                    component_id = component_data.get("component_id")
+                    component = (
+                        locked_by_id.get(component_id)
+                        if component_id is not None
+                        else None
+                    )
+                    if component_id is not None and component is None:
+                        raise ValidationError(
+                            "Um ingrediente informado não pertence a esta receita."
+                        )
+                    if component_data.get("DELETE"):
+                        if component is not None:
+                            component.delete()
+                        continue
+                    if component_data.get("ingredient") is None:
+                        continue
+
+                    if component is None:
+                        component = ProductComponent(
+                            company=company,
+                            product=locked_product,
+                        )
+                    component.ingredient = component_data["ingredient"]
+                    component.quantity = component_data["quantity"]
+                    component.unit = component_data["unit"]
+                    component.save()
+        except ValidationError as error:
+            _add_validation_error(validation_target, error)
+            return _render_product_form(
+                request,
+                company=company,
+                form=form,
+                component_formset=component_formset,
+                product=product,
+                submission_failed=True,
+            )
+
+        messages.success(request, f"Produto atualizado: {locked_product.name}.")
+        return redirect("products:product_edit", product_id=locked_product.pk)
+
+    return _render_product_form(
+        request,
+        company=company,
+        form=form,
+        component_formset=component_formset,
+        product=product,
     )
 
 

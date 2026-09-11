@@ -353,6 +353,10 @@ class StockEntryForm(forms.Form):
 
 
 class ProductComponentForm(forms.Form):
+    component_id = forms.IntegerField(
+        required=False,
+        widget=forms.HiddenInput,
+    )
     ingredient = forms.ModelChoiceField(
         queryset=Product.objects.none(),
         error_messages={
@@ -393,8 +397,12 @@ class ProductComponentForm(forms.Form):
 
     def has_changed(self):
         if self.is_bound:
+            component_id = self.data.get(self.add_prefix("component_id"), "")
             ingredient = self.data.get(self.add_prefix("ingredient"), "")
             quantity = self.data.get(self.add_prefix("quantity"), "")
+            delete = self.data.get(self.add_prefix("DELETE"), "")
+            if str(component_id).strip() or str(delete).strip():
+                return True
             if not str(ingredient).strip() and not str(quantity).strip():
                 return False
 
@@ -432,15 +440,38 @@ class ProductComponentForm(forms.Form):
 
 
 class BaseProductComponentFormSet(forms.BaseFormSet):
+    def __init__(self, *args, existing_component_ids=None, **kwargs):
+        self.existing_component_ids = set(existing_component_ids or ())
+        super().__init__(*args, **kwargs)
+
     def clean(self):
         super().clean()
+        submitted_component_ids = []
+        for form in self.forms:
+            data = form.cleaned_data
+            if not data:
+                continue
+            component_id = data.get("component_id")
+            if component_id is not None:
+                submitted_component_ids.append(component_id)
+
+        if len(submitted_component_ids) != len(set(submitted_component_ids)):
+            raise forms.ValidationError(
+                "A receita contém uma referência de ingrediente repetida."
+            )
+        if set(submitted_component_ids) != self.existing_component_ids:
+            raise forms.ValidationError(
+                "A receita mudou desde que a página foi aberta. Recarregue e tente novamente."
+            )
         if any(self.errors):
             return
 
         ingredient_ids = set()
         for form in self.forms:
             data = form.cleaned_data
-            if not data or data.get("DELETE"):
+            if not data:
+                continue
+            if data.get("DELETE"):
                 continue
             ingredient = data.get("ingredient")
             if ingredient is None:
@@ -450,7 +481,6 @@ class BaseProductComponentFormSet(forms.BaseFormSet):
                     f"O ingrediente {ingredient.name} foi informado mais de uma vez."
                 )
             ingredient_ids.add(ingredient.pk)
-
 
 ProductComponentFormSet = formset_factory(
     ProductComponentForm,

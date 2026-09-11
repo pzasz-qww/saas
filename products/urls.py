@@ -27,4 +27,9 @@ urlpatterns = [
         name="production_reverse",
     ),
     path("produtos/novo/", views.product_create, name="product_create"),
+    path(
+        "produtos/<int:product_id>/editar/",
+        views.product_edit,
+        name="product_edit",
+    ),
 ]

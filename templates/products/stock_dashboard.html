@@ -167,6 +167,11 @@
                                 <div class="muted">
                                     Unidade de venda: {{ product.unit }}
                                 </div>
+                                {% if can_create_stock_entry %}
+                                    <a href="{% url 'products:product_edit' product.id %}" class="product-edit-link">
+                                        Editar produto e receita
+                                    </a>
+                                {% endif %}
                             </td>
 
                             <td>
@@ -197,6 +202,11 @@
                                     </div>
                                 {% elif product.recipe_error %}
                                     <div class="recipe-error">{{ product.recipe_error }}</div>
+                                    {% if can_create_stock_entry %}
+                                        <a href="{% url 'products:product_edit' product.id %}" class="product-edit-link">
+                                            Configurar ingredientes
+                                        </a>
+                                    {% endif %}
                                 {% else %}
                                 {{ product.current_stock|floatformat:-6 }}
                                 {{ product.stock_base_unit_label }}
@@ -291,6 +301,11 @@
                                     {% if product.unit %}
                                         <span>Unidade de venda: {{ product.unit }}</span>
                                     {% endif %}
+                                    {% if can_create_stock_entry %}
+                                        <a href="{% url 'products:product_edit' product.id %}" class="product-edit-link">
+                                            Editar produto e receita
+                                        </a>
+                                    {% endif %}
                                 </div>
                             </div>
 
@@ -318,6 +333,11 @@
                             {% elif product.recipe_error %}
                             <span>Receita indisponível</span>
                             <small class="recipe-error">{{ product.recipe_error }}</small>
+                            {% if can_create_stock_entry %}
+                                <a href="{% url 'products:product_edit' product.id %}" class="product-edit-link">
+                                    Configurar ingredientes
+                                </a>
+                            {% endif %}
                             {% else %}
                             <span>Quantidade atual</span>
                             <strong>
