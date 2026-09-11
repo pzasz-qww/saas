@@ -44,6 +44,12 @@ from .forms import (
     StockEntryForm,
 )
 from .models import Product, ProductComponent, Production, Unit
+from .presentation import (
+    format_decimal_input,
+    format_money,
+    format_quantity,
+    friendly_recipe_error,
+)
 from .production_services import (
     ProductionServiceError,
     create_production,
@@ -79,11 +85,6 @@ def parse_decimal(value):
         return None
 
     return parsed if parsed.is_finite() else None
-
-
-def format_quantity(value):
-    formatted = f"{value or Decimal('0'):.6f}".rstrip("0").rstrip(".")
-    return formatted.replace(".", ",")
 
 
 def _get_stock_products_queryset(company):
@@ -190,7 +191,7 @@ def stock_dashboard(request):
                         "Esgotado por ingrediente"
                     )
             except RecipeServiceError as error:
-                product.recipe_error = str(error)
+                product.recipe_error = friendly_recipe_error(error)
                 product.display_stock_status = "empty"
                 product.display_stock_status_label = "Receita inválida"
             continue
@@ -208,7 +209,7 @@ def stock_dashboard(request):
             try:
                 product.production_potential = get_production_potential(product)
             except RecipeServiceError as error:
-                product.production_error = str(error)
+                product.production_error = friendly_recipe_error(error)
             continue
         if product.sale_form not in {"dose", "portion"}:
             continue
@@ -390,7 +391,6 @@ def stock_report_pdf(request):
     table_data = [[
         "Produto",
         "Categoria",
-        "Unidade",
         "Estoque atual",
         "Estoque recomendado",
         "Status",
@@ -405,7 +405,7 @@ def stock_report_pdf(request):
         )
 
         recommended_stock = (
-            format_quantity(product.minimum_quantity)
+            format_quantity(product.minimum_quantity, product.stock_base_unit)
             if product.minimum_quantity > 0
             else "-"
         )
@@ -420,16 +420,15 @@ def stock_report_pdf(request):
                 ),
                 cell_style,
             ),
-            escape(product.stock_base_unit_label),
-            format_quantity(current_stock),
+            format_quantity(current_stock, product.stock_base_unit),
             recommended_stock,
             status,
-            f"R$ {product.sale_price:.2f}".replace(".", ","),
+            format_money(product.sale_price),
         ])
 
     table = Table(
         table_data,
-        colWidths=[55 * mm, 36 * mm, 22 * mm, 30 * mm, 38 * mm, 28 * mm, 34 * mm],
+        colWidths=[60 * mm, 40 * mm, 40 * mm, 45 * mm, 30 * mm, 36 * mm],
         repeatRows=1,
         hAlign="LEFT",
     )
@@ -512,10 +511,18 @@ def _product_form_initial(product):
         "inventory_role": product.inventory_role,
         "stock_dimension": product.stock_dimension,
         "unit_description": product.unit_description,
-        "dose_ml": product.dose_ml,
-        "portion_g": product.portion_g,
+        "dose_ml": (
+            format_decimal_input(product.dose_ml)
+            if product.dose_ml is not None
+            else None
+        ),
+        "portion_g": (
+            format_decimal_input(product.portion_g)
+            if product.portion_g is not None
+            else None
+        ),
         "preparation_mode": product.preparation_mode or "",
-        "minimum_quantity": product.minimum_quantity,
+        "minimum_quantity": format_decimal_input(product.minimum_quantity),
         "active": product.active,
     }
 
@@ -525,7 +532,7 @@ def _component_form_initial(components):
         {
             "component_id": component.pk,
             "ingredient": component.ingredient_id,
-            "quantity": component.quantity,
+            "quantity": format_decimal_input(component.quantity),
             "unit": component.unit,
         }
         for component in components
@@ -584,7 +591,7 @@ def _product_availability_context(product):
         try:
             context["edit_availability"] = get_product_availability(product)
         except RecipeServiceError as error:
-            context["edit_availability_error"] = str(error)
+            context["edit_availability_error"] = friendly_recipe_error(error)
         return context
 
     if product.preparation_mode == "pre_portioned":
@@ -598,7 +605,7 @@ def _product_availability_context(product):
         try:
             context["edit_production_potential"] = get_production_potential(product)
         except RecipeServiceError as error:
-            context["edit_production_error"] = str(error)
+            context["edit_production_error"] = friendly_recipe_error(error)
     return context
 
 
@@ -1011,7 +1018,8 @@ def stock_entry_create(request):
                 request,
                 (
                     f"Entrada criada: {entry.product.name} recebeu "
-                    f"{format_quantity(entry.input_quantity)} {entry.input_unit}."
+                    f"{format_quantity(entry.input_quantity, entry.input_unit)}. "
+                    f"Custo total: {format_money(entry.total_cost)}."
                 ),
             )
             return redirect("products:stock_dashboard")
@@ -1085,8 +1093,8 @@ def stock_count_adjust(request):
         if result.difference > 0:
             messages.success(
                 request,
-                f"{product.name}: ajuste positivo de {result.difference} "
-                f"{product.stock_base_unit_label} aplicado.",
+                f"{product.name}: ajuste positivo de "
+                f"{format_quantity(result.difference, product.stock_base_unit)} aplicado.",
             )
 
             return redirect("products:stock_dashboard")
@@ -1095,8 +1103,8 @@ def stock_count_adjust(request):
 
         messages.warning(
             request,
-            f"{product.name}: ajuste negativo de {quantity_to_remove} "
-            f"{product.stock_base_unit_label} aplicado.",
+            f"{product.name}: ajuste negativo de "
+            f"{format_quantity(quantity_to_remove, product.stock_base_unit)} aplicado.",
         )
 
         return redirect("products:stock_dashboard")
@@ -1164,7 +1172,7 @@ def production_create(request, product_id):
         potential = get_production_potential(product)
     except RecipeServiceError as error:
         potential = None
-        recipe_error = str(error)
+        recipe_error = friendly_recipe_error(error)
 
     if request.method == "POST":
         form = ProductionForm(request.POST)
@@ -1197,7 +1205,12 @@ def production_create(request, product_id):
                     created_by=request.user,
                 )
             except (RecipeServiceError, StockServiceError) as error:
-                form.add_error(None, str(error))
+                message = (
+                    friendly_recipe_error(error)
+                    if isinstance(error, RecipeServiceError)
+                    else str(error)
+                )
+                form.add_error(None, message)
             else:
                 messages.success(
                     request,
@@ -1215,7 +1228,7 @@ def production_create(request, product_id):
             try:
                 expanded_components = expand_product_components(product, planned)
             except RecipeServiceError as error:
-                recipe_error = str(error)
+                recipe_error = friendly_recipe_error(error)
         rows = _production_rows(expanded_components, formset)
     else:
         default_quantity = (
@@ -1225,8 +1238,8 @@ def production_create(request, product_id):
         )
         form = ProductionForm(
             initial={
-                "planned_quantity": default_quantity,
-                "produced_quantity": default_quantity,
+                "planned_quantity": format_decimal_input(default_quantity),
+                "produced_quantity": format_decimal_input(default_quantity),
                 "production_date": timezone.localdate(),
             }
         )
@@ -1238,13 +1251,15 @@ def production_create(request, product_id):
                     default_quantity,
                 )
             except RecipeServiceError as error:
-                recipe_error = str(error)
+                recipe_error = friendly_recipe_error(error)
         formset = ProductionConsumptionFormSet(
             initial=[
                 {
                     "component_id": component.source_component.pk,
-                    "actual_quantity": component.total_quantity,
-                    "loss_quantity": Decimal("0"),
+                    "actual_quantity": format_decimal_input(
+                        component.total_quantity
+                    ),
+                    "loss_quantity": "0",
                 }
                 for component in expanded_components
             ],
