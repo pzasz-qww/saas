@@ -29,6 +29,14 @@
             </div>
 
             <div class="stock-quick-actions-grid">
+                <a
+                    href="{% url 'products:production_list' %}"
+                    class="stock-quick-action"
+                    data-stock-action="productions"
+                >
+                    <strong>Histórico de produções</strong>
+                    <span>Lotes preparados e rendimentos</span>
+                </a>
             {% if can_create_stock_entry %}
                 <a
                     href="{% url 'products:stock_entry_create' %}"
@@ -194,7 +202,10 @@
                                 {{ product.stock_base_unit_label }}
                                 {% if product.sale_availability %}
                                     <div class="commercial-yield">
-                                        {% if product.sale_form == "dose" %}
+                                        {% if product.preparation_mode == "pre_portioned" %}
+                                            Prontas para venda:
+                                            {{ product.sale_availability.available_sale_quantity|floatformat:0 }}
+                                        {% elif product.sale_form == "dose" %}
                                             {{ product.sale_availability.quantity_per_sale_unit|floatformat:-6 }} mL por dose<br>
                                             Equivale a {{ product.sale_availability.available_sale_quantity|floatformat:0 }} doses completas
                                         {% else %}
@@ -204,11 +215,19 @@
                                             {% if product.sale_availability.physical_remainder %}
                                                 (sobra {{ product.sale_availability.physical_remainder|floatformat:-6 }} g)
                                             {% endif %}
-                                            {% if product.preparation_mode == "pre_portioned" %}
-                                                <br>Não indica porções já prontas.
-                                            {% endif %}
                                         {% endif %}
                                     </div>
+                                {% endif %}
+                                {% if product.production_potential %}
+                                    <div class="production-summary">
+                                        <strong>Potencial adicional: {{ product.production_potential.available_quantity|floatformat:0 }}</strong><br>
+                                        Limitante: {{ product.production_potential.limiting_component.ingredient.name }}
+                                        {% if can_adjust_stock %}
+                                            <br><a href="{% url 'products:production_create' product.id %}" class="production-link">Produzir</a>
+                                        {% endif %}
+                                    </div>
+                                {% elif product.production_error %}
+                                    <div class="recipe-error">{{ product.production_error }}</div>
                                 {% endif %}
                                 {% endif %}
                             </td>
@@ -308,7 +327,10 @@
 
                             {% if product.sale_availability %}
                                 <small class="commercial-yield">
-                                    {% if product.sale_form == "dose" %}
+                                    {% if product.preparation_mode == "pre_portioned" %}
+                                        Prontas para venda:
+                                        {{ product.sale_availability.available_sale_quantity|floatformat:0 }}
+                                    {% elif product.sale_form == "dose" %}
                                         {{ product.sale_availability.quantity_per_sale_unit|floatformat:-6 }} mL por dose ·
                                         {{ product.sale_availability.available_sale_quantity|floatformat:0 }} doses completas
                                     {% else %}
@@ -318,11 +340,20 @@
                                         {% if product.sale_availability.physical_remainder %}
                                             · sobra {{ product.sale_availability.physical_remainder|floatformat:-6 }} g
                                         {% endif %}
-                                        {% if product.preparation_mode == "pre_portioned" %}
-                                            · não indica porções já prontas
-                                        {% endif %}
                                     {% endif %}
                                 </small>
+                            {% endif %}
+
+                            {% if product.production_potential %}
+                                <small class="production-summary">
+                                    <strong>Potencial adicional: {{ product.production_potential.available_quantity|floatformat:0 }}</strong>
+                                    · limitante: {{ product.production_potential.limiting_component.ingredient.name }}
+                                    {% if can_adjust_stock %}
+                                        · <a href="{% url 'products:production_create' product.id %}" class="production-link">Produzir</a>
+                                    {% endif %}
+                                </small>
+                            {% elif product.production_error %}
+                                <small class="recipe-error">{{ product.production_error }}</small>
                             {% endif %}
 
                             {% if product.minimum_quantity %}

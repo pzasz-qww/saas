@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Histórico de Produções{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{% static 'css/production.css' %}">{% endblock %}
+
+{% block content %}
+<main class="production-page">
+    <a href="{% url 'products:stock_dashboard' %}" class="production-back">← Central de Estoque</a>
+    <header class="production-header">
+        <div>
+            <span class="production-eyebrow">Estoque preparado</span>
+            <h1>Histórico de produções</h1>
+            <p>Consulte rendimento, custos, lotes e responsáveis.</p>
+        </div>
+    </header>
+    <section class="production-card production-table-wrap">
+        <table class="production-table">
+            <thead><tr><th>Produção</th><th>Produto</th><th>Planejado</th><th>Produzido</th><th>Rendimento</th><th>Custo</th><th>Data</th><th>Status</th></tr></thead>
+            <tbody>
+            {% for production in productions %}
+                <tr>
+                    <td><a href="{% url 'products:production_detail' production.id %}">#{{ production.id }}</a></td>
+                    <td>{{ production.product.name }}</td>
+                    <td>{{ production.planned_quantity|floatformat:-6 }}</td>
+                    <td>{{ production.produced_quantity|floatformat:-6 }}</td>
+                    <td>{{ production.yield_percentage|floatformat:2 }}%</td>
+                    <td>R$ {{ production.total_cost|floatformat:2 }}</td>
+                    <td>{{ production.production_date|date:"d/m/Y" }}</td>
+                    <td>{{ production.get_status_display }}</td>
+                </tr>
+            {% empty %}
+                <tr><td colspan="8">Nenhuma produção registrada.</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </section>
+</main>
+{% endblock %}

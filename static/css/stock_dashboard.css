@@ -542,3 +542,20 @@
         justify-self: start;
     }
 }
+
+.production-summary {
+    display: block;
+    margin-top: 8px;
+    padding: 8px;
+    border-radius: 7px;
+    background: #eff6ff;
+    color: #1e40af;
+    font-size: 12px;
+}
+
+.production-link {
+    display: inline-block;
+    margin-top: 5px;
+    color: #1d4ed8;
+    font-weight: 800;
+}

@@ -30,7 +30,7 @@ class StockCommercialYieldTests(TestCase):
         self.assertContains(response, "50 mL por dose")
         self.assertContains(response, "90 doses completas")
 
-    def test_pre_portioned_yield_is_explicitly_only_mathematical(self):
+    def test_pre_portioned_own_stock_is_reported_as_ready_for_sale(self):
         product = make_product(
             company=self.company,
             name="Batata pré-porcionada",
@@ -44,9 +44,9 @@ class StockCommercialYieldTests(TestCase):
 
         response = self.client.get(reverse("products:stock_dashboard"))
 
-        self.assertContains(response, "12 porções completas")
-        self.assertContains(response, "sobra 200 g")
-        self.assertContains(response, "não indica porções já prontas")
+        self.assertContains(response, "Prontas para venda:")
+        self.assertContains(response, "12")
+        self.assertContains(response, "não possui componentes")
 
     def test_on_demand_dashboard_shows_limiting_ingredient_and_yields(self):
         drink = make_product(

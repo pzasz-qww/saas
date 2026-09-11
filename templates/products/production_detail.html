@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Produção #{{ production.id }}{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{% static 'css/production.css' %}">{% endblock %}
+
+{% block content %}
+<main class="production-page">
+    <a href="{% url 'products:production_list' %}" class="production-back">← Histórico de produções</a>
+    {% if messages %}<div class="messages">{% for message in messages %}<div class="message">{{ message }}</div>{% endfor %}</div>{% endif %}
+    <header class="production-header">
+        <div>
+            <span class="production-eyebrow">Produção #{{ production.id }}</span>
+            <h1>{{ production.product.name }}</h1>
+            <p>{{ production.production_date|date:"d/m/Y" }} · {{ production.get_status_display }}</p>
+        </div>
+        <div class="production-potential">
+            <span>Custo por unidade</span>
+            <strong>R$ {{ production.unit_cost|floatformat:2 }}</strong>
+            <small>Total: R$ {{ production.total_cost|floatformat:2 }}</small>
+        </div>
+    </header>
+
+    <section class="production-card">
+        <div class="yield-preview">
+            <div><span>Planejado</span><strong>{{ production.planned_quantity|floatformat:-6 }}</strong></div>
+            <div><span>Produzido</span><strong>{{ production.produced_quantity|floatformat:-6 }}</strong></div>
+            <div><span>Rendimento</span><strong>{{ production.yield_percentage|floatformat:2 }}%</strong></div>
+            <div><span>Diferença</span><strong>{{ production.yield_difference|floatformat:-6 }}</strong></div>
+        </div>
+        <dl class="production-meta">
+            <div><dt>Responsável</dt><dd>{{ production.created_by|default:"—" }}</dd></div>
+            <div><dt>Validade</dt><dd>{{ production.expiration_date|date:"d/m/Y"|default:"Não informada" }}</dd></div>
+            <div><dt>Lote produzido</dt><dd>{% if output_entry %}#{{ output_entry.id }} · saldo {{ output_entry.remaining_quantity|floatformat:-6 }} {{ output_entry.base_unit }}{% else %}—{% endif %}</dd></div>
+            <div><dt>Observação</dt><dd>{{ production.notes|default:"—" }}</dd></div>
+        </dl>
+    </section>
+
+    <section class="production-card">
+        <h2>Ingredientes consumidos</h2>
+        {% for consumption in consumptions %}
+        <article class="production-component">
+            <div class="component-title">
+                <h3>{{ consumption.ingredient.name }}</h3>
+                <strong>R$ {{ consumption.total_cost|floatformat:2 }}</strong>
+            </div>
+            <p>Teórico: {{ consumption.theoretical_quantity|floatformat:-6 }} {{ consumption.base_unit }} · Real: {{ consumption.actual_quantity|floatformat:-6 }} {{ consumption.base_unit }} · Perda incluída: {{ consumption.loss_quantity|floatformat:-6 }} {{ consumption.base_unit }}</p>
+            <ul class="allocation-list">
+                {% for movement in consumption.allocations %}
+                <li>Lote #{{ movement.stock_entry_id }} → {{ movement.quantity|floatformat:-6 }} {{ consumption.base_unit }} · R$ {{ movement.cost_value|floatformat:2 }}</li>
+                {% empty %}<li>Sem alocações rastreáveis.</li>{% endfor %}
+            </ul>
+        </article>
+        {% endfor %}
+    </section>
+
+    {% if can_reverse %}
+    <form method="post" action="{% url 'products:production_reverse' production.id %}" class="production-reverse-form">
+        {% csrf_token %}
+        <button type="submit" class="production-danger">Reverter produção intacta</button>
+        <small>A reversão será recusada se o lote produzido já tiver qualquer movimentação.</small>
+    </form>
+    {% endif %}
+</main>
+{% endblock %}

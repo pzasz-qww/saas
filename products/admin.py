@@ -9,6 +9,8 @@ from .models import (
     Category,
     Product,
     ProductComponent,
+    Production,
+    ProductionConsumption,
     StockEntry,
     StockMovement,
     Unit,
@@ -475,6 +477,7 @@ class ProductComponentAdmin(CompanyScopedAdminMixin, admin.ModelAdmin):
 class StockEntryAdmin(admin.ModelAdmin):
     list_display = (
         "product",
+        "production",
         "company",
         "input_quantity",
         "input_unit",
@@ -494,6 +497,7 @@ class StockEntryAdmin(admin.ModelAdmin):
     list_filter = (
         "company",
         "product",
+        "production",
         "input_unit",
         "entry_date",
         "expiration_date",
@@ -529,6 +533,7 @@ class StockEntryAdmin(admin.ModelAdmin):
                 "fields": (
                     "company",
                     "product",
+                    "production",
                     "entry_date",
                     "expiration_date",
                 )
@@ -626,6 +631,8 @@ class StockMovementAdmin(admin.ModelAdmin):
         "movement_type",
         "quantity",
         "sale_item_component",
+        "production",
+        "production_consumption",
         "sale_value",
         "cost_value",
         "reason",
@@ -636,6 +643,7 @@ class StockMovementAdmin(admin.ModelAdmin):
     search_fields = (
         "product__name",
         "sale_item_component__ingredient__name",
+        "production__product__name",
         "company__name",
         "reason",
         "notes",
@@ -649,6 +657,8 @@ class StockMovementAdmin(admin.ModelAdmin):
         "stock_entry",
         "sale_item",
         "sale_item_component",
+        "production",
+        "production_consumption",
         "reversal_of",
         "movement_type",
         "quantity",
@@ -671,6 +681,8 @@ class StockMovementAdmin(admin.ModelAdmin):
                     "product",
                     "sale_item",
                     "sale_item_component",
+                    "production",
+                    "production_consumption",
                     "reversal_of",
                     "movement_type",
                     "quantity",
@@ -711,6 +723,79 @@ class StockMovementAdmin(admin.ModelAdmin):
 
     def has_change_permission(self, request, obj=None):
         return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+class ProductionConsumptionInline(admin.TabularInline):
+    model = ProductionConsumption
+    extra = 0
+    can_delete = False
+    fields = (
+        "ingredient",
+        "theoretical_quantity",
+        "actual_quantity",
+        "loss_quantity",
+        "base_unit",
+        "total_cost",
+    )
+    readonly_fields = fields
+
+    def has_add_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(Production)
+class ProductionAdmin(CompanyScopedAdminMixin, admin.ModelAdmin):
+    inlines = (ProductionConsumptionInline,)
+    list_display = (
+        "id",
+        "product",
+        "company",
+        "planned_quantity",
+        "produced_quantity",
+        "show_yield",
+        "total_cost",
+        "production_date",
+        "expiration_date",
+        "status",
+        "created_by",
+    )
+    list_filter = ("company", "status", "production_date", "product")
+    search_fields = ("=id", "product__name", "company__name", "created_by__username")
+    readonly_fields = (
+        "company",
+        "product",
+        "planned_quantity",
+        "produced_quantity",
+        "show_yield",
+        "total_cost",
+        "production_date",
+        "expiration_date",
+        "notes",
+        "status",
+        "created_by",
+        "reversed_by",
+        "reversed_at",
+        "created_at",
+    )
+
+    def show_yield(self, obj):
+        return f"{obj.yield_percentage:.2f}%" if obj else "-"
+
+    show_yield.short_description = "Rendimento"
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        if not self._object_is_in_scope(request, obj):
+            return False
+        return bool(obj is not None and super().has_view_permission(request, obj=obj))
 
     def has_delete_permission(self, request, obj=None):
         return False

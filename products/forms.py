@@ -460,9 +460,113 @@ ProductComponentFormSet = formset_factory(
 )
 
 
+class ProductionForm(forms.Form):
+    planned_quantity = CommaDecimalField(
+        max_digits=20,
+        decimal_places=6,
+        min_value=Decimal("0.000001"),
+        label="Quantidade planejada",
+        widget=forms.NumberInput(attrs={"step": "0.000001", "min": "0.000001"}),
+    )
+    produced_quantity = CommaDecimalField(
+        max_digits=20,
+        decimal_places=6,
+        min_value=Decimal("0.000001"),
+        label="Quantidade realmente produzida",
+        widget=forms.NumberInput(attrs={"step": "0.000001", "min": "0.000001"}),
+    )
+    production_date = forms.DateField(
+        label="Data da produção",
+        widget=forms.DateInput(attrs={"type": "date"}),
+    )
+    expiration_date = forms.DateField(
+        required=False,
+        label="Validade do lote produzido",
+        widget=forms.DateInput(attrs={"type": "date"}),
+    )
+    notes = forms.CharField(
+        required=False,
+        label="Observação",
+        widget=forms.Textarea(attrs={"rows": 3}),
+    )
+
+    def clean(self):
+        cleaned_data = super().clean()
+        production_date = cleaned_data.get("production_date")
+        expiration_date = cleaned_data.get("expiration_date")
+        if (
+            production_date is not None
+            and expiration_date is not None
+            and expiration_date < production_date
+        ):
+            self.add_error(
+                "expiration_date",
+                "A validade não pode ser anterior à data da produção.",
+            )
+        return cleaned_data
+
+
+class ProductionConsumptionForm(forms.Form):
+    component_id = forms.IntegerField(widget=forms.HiddenInput)
+    actual_quantity = CommaDecimalField(
+        max_digits=20,
+        decimal_places=6,
+        min_value=Decimal("0.000001"),
+        label="Consumo real",
+        widget=forms.NumberInput(attrs={"step": "0.000001", "min": "0.000001"}),
+    )
+    loss_quantity = CommaDecimalField(
+        max_digits=20,
+        decimal_places=6,
+        min_value=Decimal("0"),
+        required=False,
+        initial=Decimal("0"),
+        label="Perda dentro do consumo",
+        widget=forms.NumberInput(attrs={"step": "0.000001", "min": "0"}),
+    )
+
+    def clean(self):
+        cleaned_data = super().clean()
+        actual = cleaned_data.get("actual_quantity")
+        loss = cleaned_data.get("loss_quantity") or Decimal("0")
+        cleaned_data["loss_quantity"] = loss
+        if actual is not None and loss > actual:
+            self.add_error(
+                "loss_quantity",
+                "A perda não pode superar o consumo real.",
+            )
+        return cleaned_data
+
+
+class BaseProductionConsumptionFormSet(forms.BaseFormSet):
+    def clean(self):
+        super().clean()
+        if any(self.errors):
+            return
+        component_ids = [
+            form.cleaned_data.get("component_id")
+            for form in self.forms
+            if form.cleaned_data
+        ]
+        if len(component_ids) != len(set(component_ids)):
+            raise forms.ValidationError(
+                "Cada componente deve aparecer exatamente uma vez."
+            )
+
+
+ProductionConsumptionFormSet = formset_factory(
+    ProductionConsumptionForm,
+    formset=BaseProductionConsumptionFormSet,
+    extra=0,
+)
+
+
 __all__ = [
     "ProductComponentForm",
     "ProductComponentFormSet",
     "ProductCreateForm",
+    "ProductionConsumptionForm",
+    "ProductionConsumptionFormSet",
+    "ProductionForm",
     "StockEntryForm",
 ]

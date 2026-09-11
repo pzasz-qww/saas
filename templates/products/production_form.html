@@ -1,0 +1,109 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Produzir — {{ product.name }}{% endblock %}
+
+{% block extra_css %}
+    <link rel="stylesheet" href="{% static 'css/production.css' %}">
+{% endblock %}
+
+{% block content %}
+<main class="production-page">
+    <a href="{% url 'products:stock_dashboard' %}" class="production-back">← Central de Estoque</a>
+    <header class="production-header">
+        <div>
+            <span class="production-eyebrow">Produção antecipada</span>
+            <h1>Produzir — {{ product.name }}</h1>
+            <p>Os ingredientes serão baixados agora e o resultado entrará como lote pronto.</p>
+        </div>
+        {% if potential %}
+        <div class="production-potential">
+            <span>Potencial atual</span>
+            <strong>{{ potential.available_quantity|floatformat:0 }}</strong>
+            <small>Limitante: {{ potential.limiting_component.ingredient.name }}</small>
+        </div>
+        {% endif %}
+    </header>
+
+    {% if recipe_error %}
+    <div class="production-alert production-alert--error">{{ recipe_error }}</div>
+    {% endif %}
+
+    {% if form.non_field_errors or formset.non_form_errors %}
+    <div class="production-alert production-alert--error">
+        {% for error in form.non_field_errors %}<div>{{ error }}</div>{% endfor %}
+        {% for error in formset.non_form_errors %}<div>{{ error }}</div>{% endfor %}
+    </div>
+    {% endif %}
+
+    <form method="post" class="production-form" novalidate>
+        {% csrf_token %}
+        {{ formset.management_form }}
+
+        <section class="production-card">
+            <h2>Planejamento e resultado</h2>
+            <div class="production-grid">
+                {% for field in form %}
+                <div class="production-field {% if field.name == 'notes' %}production-field--wide{% endif %}">
+                    <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+                    {{ field }}
+                    {% for error in field.errors %}<small class="field-error">{{ error }}</small>{% endfor %}
+                </div>
+                {% endfor %}
+            </div>
+            <div class="yield-preview" aria-live="polite">
+                <div><span>Rendimento esperado</span><strong id="planned-yield">—</strong></div>
+                <div><span>Rendimento real</span><strong id="actual-yield">—</strong></div>
+                <div><span>Percentual</span><strong id="yield-percentage">—</strong></div>
+                <div><span>Diferença</span><strong id="yield-difference">—</strong></div>
+            </div>
+        </section>
+
+        <section class="production-card">
+            <h2>Consumo dos componentes</h2>
+            <p class="production-hint">O consumo real inicia com o valor teórico. A perda informada já faz parte desse consumo e não gera outra baixa.</p>
+            <div class="component-list">
+                {% for row in rows %}
+                <article class="production-component" data-per-unit="{{ row.component.quantity_per_sale_unit }}">
+                    {{ row.form.component_id }}
+                    <div class="component-title">
+                        <div>
+                            <h3>{{ row.component.ingredient.name }}</h3>
+                            <span>
+                                Estoque: {{ row.physical_stock|floatformat:-6 }} {{ row.component.base_unit }}
+                            </span>
+                        </div>
+                        <span class="component-status {% if row.sufficient %}component-status--ok{% else %}component-status--error{% endif %}">
+                            {% if row.sufficient %}Estoque suficiente{% else %}Estoque insuficiente{% endif %}
+                        </span>
+                    </div>
+                    <div class="component-theoretical">
+                        Teórico: <strong data-theoretical>{{ row.component.total_quantity|floatformat:-6 }}</strong>
+                        {{ row.component.base_unit }}
+                    </div>
+                    <div class="production-grid production-grid--component">
+                        <div class="production-field">
+                            <label for="{{ row.form.actual_quantity.id_for_label }}">Consumo real ({{ row.component.base_unit }})</label>
+                            {{ row.form.actual_quantity }}
+                            {% for error in row.form.actual_quantity.errors %}<small class="field-error">{{ error }}</small>{% endfor %}
+                        </div>
+                        <div class="production-field">
+                            <label for="{{ row.form.loss_quantity.id_for_label }}">Perda incluída ({{ row.component.base_unit }})</label>
+                            {{ row.form.loss_quantity }}
+                            {% for error in row.form.loss_quantity.errors %}<small class="field-error">{{ error }}</small>{% endfor %}
+                        </div>
+                    </div>
+                </article>
+                {% empty %}
+                <p>Nenhum componente disponível para produção.</p>
+                {% endfor %}
+            </div>
+        </section>
+
+        <button type="submit" class="production-submit" {% if recipe_error %}disabled{% endif %}>
+            Registrar produção
+        </button>
+    </form>
+</main>
+<script src="{% static 'js/production_form.js' %}"></script>
+{% endblock %}

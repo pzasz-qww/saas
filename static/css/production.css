@@ -1,0 +1,54 @@
+.production-page { max-width: 1120px; margin: 0 auto; padding: 20px; }
+.production-back { display: inline-block; margin-bottom: 16px; color: #374151; text-decoration: none; }
+.production-header { display: flex; justify-content: space-between; gap: 20px; align-items: flex-start; margin-bottom: 20px; }
+.production-header h1 { margin: 4px 0; color: #111827; }
+.production-header p, .production-hint { color: #6b7280; }
+.production-eyebrow { color: #2563eb; font-size: 12px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+.production-potential { min-width: 190px; padding: 16px; border-radius: 12px; background: #eff6ff; }
+.production-potential span, .production-potential small { display: block; color: #1e40af; }
+.production-potential strong { display: block; margin: 4px 0; color: #1d4ed8; font-size: 28px; }
+.production-card { margin-bottom: 18px; padding: 20px; border: 1px solid #e5e7eb; border-radius: 12px; background: #fff; }
+.production-card h2 { margin-top: 0; }
+.production-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.production-grid--component { margin-top: 14px; }
+.production-field--wide { grid-column: 1 / -1; }
+.production-field label { display: block; margin-bottom: 6px; color: #374151; font-weight: 700; }
+.production-field input, .production-field textarea { width: 100%; box-sizing: border-box; padding: 10px 12px; border: 1px solid #d1d5db; border-radius: 8px; font: inherit; }
+.field-error { display: block; margin-top: 5px; color: #b91c1c; }
+.yield-preview { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-top: 18px; }
+.yield-preview div { padding: 12px; border-radius: 9px; background: #f3f4f6; }
+.yield-preview span, .yield-preview strong { display: block; }
+.yield-preview span { color: #6b7280; font-size: 12px; }
+.yield-preview strong { margin-top: 3px; color: #111827; font-size: 20px; }
+.component-list { display: grid; gap: 12px; }
+.production-component { padding: 16px; border: 1px solid #e5e7eb; border-radius: 10px; background: #f9fafb; }
+.component-title { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; }
+.component-title h3 { margin: 0 0 3px; }
+.component-title span { color: #6b7280; font-size: 13px; }
+.component-status { padding: 5px 8px; border-radius: 999px; font-size: 12px; font-weight: 700; }
+.component-status--ok { background: #dcfce7; color: #166534; }
+.component-status--error { background: #fee2e2; color: #991b1b; }
+.component-theoretical { margin-top: 12px; color: #374151; }
+.production-alert { margin-bottom: 16px; padding: 12px 14px; border-radius: 8px; }
+.production-alert--error { background: #fee2e2; color: #991b1b; }
+.production-submit, .production-danger { border: 0; border-radius: 9px; padding: 12px 18px; color: #fff; font-weight: 800; cursor: pointer; }
+.production-submit { background: #047857; }
+.production-submit:disabled { cursor: not-allowed; opacity: .5; }
+.production-danger { background: #b91c1c; }
+.production-reverse-form { display: flex; gap: 12px; align-items: center; }
+.production-reverse-form small { color: #6b7280; }
+.production-meta { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.production-meta div { padding: 10px; background: #f9fafb; border-radius: 8px; }
+.production-meta dt { color: #6b7280; font-size: 12px; }
+.production-meta dd { margin: 4px 0 0; }
+.production-table-wrap { overflow-x: auto; }
+.production-table { width: 100%; border-collapse: collapse; }
+.production-table th, .production-table td { padding: 10px; border-bottom: 1px solid #e5e7eb; text-align: left; white-space: nowrap; }
+.allocation-list { margin-bottom: 0; color: #4b5563; }
+@media (max-width: 700px) {
+    .production-page { padding: 14px; }
+    .production-header { display: grid; }
+    .production-potential { min-width: 0; }
+    .production-grid, .yield-preview, .production-meta { grid-template-columns: 1fr; }
+    .production-reverse-form { align-items: flex-start; flex-direction: column; }
+}

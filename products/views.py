@@ -20,7 +20,7 @@ from django.db.models.functions import Coalesce
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
-from django.views.decorators.http import require_GET
+from django.views.decorators.http import require_GET, require_POST
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4, landscape
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
@@ -36,9 +36,25 @@ from accounts.permissions import (
 
 from .category_names import clean_category_name
 from .category_services import resolve_category
-from .forms import ProductComponentFormSet, ProductCreateForm, StockEntryForm
-from .models import Product, ProductComponent, Unit
-from .recipe_services import RecipeServiceError, get_product_availability
+from .forms import (
+    ProductComponentFormSet,
+    ProductCreateForm,
+    ProductionConsumptionFormSet,
+    ProductionForm,
+    StockEntryForm,
+)
+from .models import Product, ProductComponent, Production, Unit
+from .production_services import (
+    ProductionServiceError,
+    create_production,
+    reverse_production,
+)
+from .recipe_services import (
+    RecipeServiceError,
+    expand_product_components,
+    get_product_availability,
+    get_production_potential,
+)
 from .sale_quantities import PhysicalSaleQuantityError, get_sale_availability
 from .services import (
     StockEntryValidationError,
@@ -157,6 +173,8 @@ def stock_dashboard(request):
         product.sale_availability = None
         product.recipe_availability = None
         product.recipe_error = None
+        product.production_potential = None
+        product.production_error = None
         if (
             product.inventory_role == "prepared"
             and product.preparation_mode == "on_demand"
@@ -175,6 +193,22 @@ def stock_dashboard(request):
                 product.recipe_error = str(error)
                 product.display_stock_status = "empty"
                 product.display_stock_status_label = "Receita inválida"
+            continue
+        if (
+            product.inventory_role == "prepared"
+            and product.preparation_mode == "pre_portioned"
+        ):
+            try:
+                product.sale_availability = get_sale_availability(
+                    product,
+                    product.current_stock,
+                )
+            except PhysicalSaleQuantityError:
+                pass
+            try:
+                product.production_potential = get_production_potential(product)
+            except RecipeServiceError as error:
+                product.production_error = str(error)
             continue
         if product.sale_form not in {"dose", "portion"}:
             continue
@@ -801,4 +835,252 @@ def stock_count_adjust(request):
         {
             "products": products,
         },
+    )
+
+
+def _pre_portioned_product(company, product_id):
+    return get_object_or_404(
+        Product.objects.select_related("company", "unit", "category"),
+        pk=product_id,
+        company=company,
+        active=True,
+        inventory_role="prepared",
+        preparation_mode="pre_portioned",
+    )
+
+
+def _production_rows(expanded_components, formset):
+    availability_by_ingredient = {}
+    if expanded_components:
+        potential = get_production_potential(
+            expanded_components[0].source_component.product
+        )
+        availability_by_ingredient = {
+            item.ingredient.pk: item
+            for item in potential.component_availability
+        }
+    rows = []
+    for component, component_form in zip(expanded_components, formset.forms):
+        availability = availability_by_ingredient.get(component.ingredient.pk)
+        rows.append(
+            {
+                "component": component,
+                "form": component_form,
+                "physical_stock": (
+                    availability.physical_stock if availability else Decimal("0")
+                ),
+                "sufficient": (
+                    availability is not None
+                    and availability.physical_stock >= component.total_quantity
+                ),
+            }
+        )
+    return rows
+
+
+@login_required
+@company_required
+def production_create(request, product_id):
+    if not can_adjust_stock(request.user):
+        messages.warning(request, "Você não tem permissão para registrar produção.")
+        return redirect("products:stock_dashboard")
+
+    company = request.current_company
+    product = _pre_portioned_product(company, product_id)
+    recipe_error = None
+    try:
+        potential = get_production_potential(product)
+    except RecipeServiceError as error:
+        potential = None
+        recipe_error = str(error)
+
+    if request.method == "POST":
+        form = ProductionForm(request.POST)
+        formset = ProductionConsumptionFormSet(
+            request.POST,
+            prefix="consumption",
+        )
+        if form.is_valid() and formset.is_valid():
+            component_values = {
+                component_form.cleaned_data["component_id"]: {
+                    "actual_quantity": component_form.cleaned_data[
+                        "actual_quantity"
+                    ],
+                    "loss_quantity": component_form.cleaned_data[
+                        "loss_quantity"
+                    ],
+                }
+                for component_form in formset.forms
+            }
+            try:
+                result = create_production(
+                    company=company,
+                    product=product,
+                    planned_quantity=form.cleaned_data["planned_quantity"],
+                    produced_quantity=form.cleaned_data["produced_quantity"],
+                    production_date=form.cleaned_data["production_date"],
+                    expiration_date=form.cleaned_data.get("expiration_date"),
+                    component_values=component_values,
+                    notes=form.cleaned_data.get("notes"),
+                    created_by=request.user,
+                )
+            except (RecipeServiceError, StockServiceError) as error:
+                form.add_error(None, str(error))
+            else:
+                messages.success(
+                    request,
+                    f"Produção #{result.production.pk} registrada com sucesso.",
+                )
+                return redirect(
+                    "products:production_detail",
+                    production_id=result.production.pk,
+                )
+        planned = form.cleaned_data.get("planned_quantity") if form.is_bound else None
+        if planned is None:
+            planned = parse_decimal(request.POST.get("planned_quantity"))
+        expanded_components = ()
+        if planned is not None and planned > 0 and recipe_error is None:
+            try:
+                expanded_components = expand_product_components(product, planned)
+            except RecipeServiceError as error:
+                recipe_error = str(error)
+        rows = _production_rows(expanded_components, formset)
+    else:
+        default_quantity = (
+            potential.available_quantity
+            if potential is not None and potential.available_quantity > 0
+            else Decimal("1")
+        )
+        form = ProductionForm(
+            initial={
+                "planned_quantity": default_quantity,
+                "produced_quantity": default_quantity,
+                "production_date": timezone.localdate(),
+            }
+        )
+        expanded_components = ()
+        if recipe_error is None:
+            try:
+                expanded_components = expand_product_components(
+                    product,
+                    default_quantity,
+                )
+            except RecipeServiceError as error:
+                recipe_error = str(error)
+        formset = ProductionConsumptionFormSet(
+            initial=[
+                {
+                    "component_id": component.source_component.pk,
+                    "actual_quantity": component.total_quantity,
+                    "loss_quantity": Decimal("0"),
+                }
+                for component in expanded_components
+            ],
+            prefix="consumption",
+        )
+        rows = _production_rows(expanded_components, formset)
+
+    return render(
+        request,
+        "products/production_form.html",
+        {
+            "product": product,
+            "potential": potential,
+            "recipe_error": recipe_error,
+            "form": form,
+            "formset": formset,
+            "rows": rows,
+        },
+    )
+
+
+@login_required
+@company_required
+def production_list(request):
+    if not can_view_stock(request.user):
+        messages.warning(request, "Você não tem permissão para ver produções.")
+        return redirect("orders:pdv")
+    productions = (
+        Production.objects.filter(company=request.current_company)
+        .select_related("product", "created_by", "reversed_by")
+        .order_by("-production_date", "-id")
+    )
+    return render(
+        request,
+        "products/production_list.html",
+        {"productions": productions},
+    )
+
+
+@login_required
+@company_required
+def production_detail(request, production_id):
+    if not can_view_stock(request.user):
+        messages.warning(request, "Você não tem permissão para ver produções.")
+        return redirect("orders:pdv")
+    production = get_object_or_404(
+        Production.objects.select_related(
+            "product",
+            "created_by",
+            "reversed_by",
+        ),
+        pk=production_id,
+        company=request.current_company,
+    )
+    consumptions = list(
+        production.consumptions.select_related("ingredient").order_by(
+            "ingredient__name",
+            "id",
+        )
+    )
+    for consumption in consumptions:
+        consumption.allocations = list(
+            consumption.stock_movements.filter(
+                movement_type="production_consumption"
+            )
+            .select_related("stock_entry")
+            .order_by("stock_entry__created_at", "stock_entry_id")
+        )
+    output_entry = getattr(production, "output_stock_entry", None)
+    return render(
+        request,
+        "products/production_detail.html",
+        {
+            "production": production,
+            "consumptions": consumptions,
+            "output_entry": output_entry,
+            "can_reverse": (
+                can_adjust_stock(request.user)
+                and production.status == Production.STATUS_COMPLETED
+            ),
+        },
+    )
+
+
+@login_required
+@company_required
+@require_POST
+def production_reverse(request, production_id):
+    if not can_adjust_stock(request.user):
+        messages.warning(request, "Você não tem permissão para reverter produção.")
+        return redirect(
+            "products:production_detail",
+            production_id=production_id,
+        )
+    try:
+        result = reverse_production(
+            company=request.current_company,
+            production_id=production_id,
+            user=request.user,
+        )
+    except ProductionServiceError as error:
+        messages.warning(request, str(error))
+    else:
+        if result.reversed:
+            messages.success(request, f"Produção #{production_id} revertida.")
+        else:
+            messages.info(request, f"Produção #{production_id} já estava revertida.")
+    return redirect(
+        "products:production_detail",
+        production_id=production_id,
     )
