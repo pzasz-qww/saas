@@ -62,9 +62,9 @@ class ProductionViewTests(TestCase):
     def test_stock_dashboard_separates_ready_stock_and_production_potential(self):
         response = self.client.get(reverse("products:stock_dashboard"))
 
-        self.assertContains(response, "Prontas para venda:")
-        self.assertContains(response, "Potencial adicional: 10")
-        self.assertContains(response, "Limitante: Carne")
+        self.assertContains(response, "0 prontas para venda")
+        self.assertContains(response, "Pode preparar: +10")
+        self.assertContains(response, "Limitado por Carne")
         self.assertContains(
             response,
             reverse("products:production_create", args=[self.product.pk]),
@@ -78,8 +78,8 @@ class ProductionViewTests(TestCase):
             created_by=self.user,
         )
         response = self.client.get(reverse("products:stock_dashboard"))
-        self.assertContains(response, "Prontas para venda:")
-        self.assertContains(response, "Potencial adicional: 6")
+        self.assertContains(response, "3 prontas para venda")
+        self.assertContains(response, "Pode preparar: +6")
 
     def test_production_form_shows_theoretical_consumption_and_current_stock(self):
         response = self.client.get(
@@ -88,8 +88,8 @@ class ProductionViewTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Produzir — Porção de carne")
-        self.assertContains(response, "Teórico:")
-        self.assertContains(response, "5000")
+        self.assertContains(response, "Consumo previsto:")
+        self.assertContains(response, "5 kg")
         self.assertContains(response, "Estoque suficiente")
         self.assertContains(response, "Quantidade realmente produzida")
 
@@ -113,7 +113,7 @@ class ProductionViewTests(TestCase):
         )
         self.assertContains(detail, "Produção #")
         self.assertContains(detail, "Lote #")
-        self.assertContains(detail, "Perda incluída")
+        self.assertContains(detail, "Perda: 500 g")
         self.assertContains(detail, "R$ 100,00")
 
     def test_invalid_real_consumption_does_not_change_stock(self):

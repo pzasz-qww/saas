@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% load static %}
+{% load static product_display %}
 
 {% block title %}Histórico de Produções{% endblock %}
 {% block extra_css %}<link rel="stylesheet" href="{% static 'css/production.css' %}">{% endblock %}
@@ -22,10 +22,10 @@
                 <tr>
                     <td><a href="{% url 'products:production_detail' production.id %}">#{{ production.id }}</a></td>
                     <td>{{ production.product.name }}</td>
-                    <td>{{ production.planned_quantity|floatformat:-6 }}</td>
-                    <td>{{ production.produced_quantity|floatformat:-6 }}</td>
-                    <td>{{ production.yield_percentage|floatformat:2 }}%</td>
-                    <td>R$ {{ production.total_cost|floatformat:2 }}</td>
+                    <td>{{ production.planned_quantity|decimal_ptbr }}</td>
+                    <td>{{ production.produced_quantity|decimal_ptbr }}</td>
+                    <td>{{ production.yield_percentage|decimal_ptbr }}%</td>
+                    <td>{{ production.total_cost|brl }}</td>
                     <td>{{ production.production_date|date:"d/m/Y" }}</td>
                     <td>{{ production.get_status_display }}</td>
                 </tr>

@@ -13,6 +13,7 @@
 .production-grid--component { margin-top: 14px; }
 .production-field--wide { grid-column: 1 / -1; }
 .production-field label { display: block; margin-bottom: 6px; color: #374151; font-weight: 700; }
+.physical-input-preview { display: block; margin-top: 5px; color: #6b7280; font-weight: 700; }
 .production-field input, .production-field textarea { width: 100%; box-sizing: border-box; padding: 10px 12px; border: 1px solid #d1d5db; border-radius: 8px; font: inherit; }
 .field-error { display: block; margin-top: 5px; color: #b91c1c; }
 .yield-preview { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-top: 18px; }

@@ -1,0 +1,73 @@
+{% load product_display %}
+{% if product.recipe_availability %}
+    <div class="stock-primary-value">
+        <strong>{{ product.recipe_availability.available_quantity|decimal_ptbr }} disponíveis</strong>
+    </div>
+    <div class="recipe-availability">
+        <span>Limitado por</span>
+        <strong>{{ product.recipe_availability.limiting_component.ingredient.name }}</strong>
+        <ul>
+            {% for component in product.recipe_availability.component_availability %}
+                <li>
+                    {{ component.ingredient.name }}:
+                    {{ component.quantity_per_sale_unit|physical_quantity:component.base_unit }} por item,
+                    rende {{ component.available_quantity|decimal_ptbr }}
+                </li>
+            {% endfor %}
+        </ul>
+    </div>
+{% elif product.recipe_error %}
+    <div class="recipe-error">{{ product.recipe_error }}</div>
+    {% if can_create_stock_entry %}
+        <a href="{% url 'products:product_edit' product.id %}" class="product-edit-link">
+            Configurar ingredientes
+        </a>
+    {% endif %}
+{% elif product.preparation_mode == "pre_portioned" %}
+    <div class="stock-primary-value">
+        {% if product.sale_availability %}
+            <strong>{{ product.sale_availability.available_sale_quantity|decimal_ptbr }} prontas para venda</strong>
+        {% else %}
+            <strong>Disponibilidade não calculada</strong>
+        {% endif %}
+    </div>
+    <div class="stock-physical-detail">
+        Estoque físico: {{ product.current_stock|physical_quantity:product.stock_base_unit }}
+    </div>
+    {% if product.production_potential %}
+        <div class="production-summary">
+            <strong>Pode preparar: +{{ product.production_potential.available_quantity|decimal_ptbr }}</strong><br>
+            Limitado por {{ product.production_potential.limiting_component.ingredient.name }}
+            {% if can_adjust_stock %}
+                <br><a href="{% url 'products:production_create' product.id %}" class="production-link">Produzir</a>
+            {% endif %}
+        </div>
+    {% elif product.production_error %}
+        <div class="recipe-error">{{ product.production_error }}</div>
+    {% endif %}
+{% elif product.sale_form == "dose" and product.sale_availability %}
+    <div class="stock-primary-value">
+        <span>Estoque físico</span>
+        <strong>{{ product.current_stock|physical_quantity:product.stock_base_unit }}</strong>
+    </div>
+    <div class="commercial-yield">
+        Dose: {{ product.sale_availability.quantity_per_sale_unit|physical_quantity:product.sale_availability.base_unit }}<br>
+        Rende {{ product.sale_availability.available_sale_quantity|decimal_ptbr }} doses
+    </div>
+{% elif product.sale_form == "portion" and product.sale_availability %}
+    <div class="stock-primary-value">
+        <span>Estoque físico</span>
+        <strong>{{ product.current_stock|physical_quantity:product.stock_base_unit }}</strong>
+    </div>
+    <div class="commercial-yield">
+        Porção: {{ product.sale_availability.quantity_per_sale_unit|physical_quantity:product.sale_availability.base_unit }}<br>
+        Rende até {{ product.sale_availability.available_sale_quantity|decimal_ptbr }} porções
+        {% if product.sale_availability.physical_remainder %}
+            · sobra {{ product.sale_availability.physical_remainder|physical_quantity:product.sale_availability.base_unit }}
+        {% endif %}
+    </div>
+{% else %}
+    <div class="stock-primary-value">
+        <strong>{{ product.current_stock|physical_quantity:product.stock_base_unit }}</strong>
+    </div>
+{% endif %}

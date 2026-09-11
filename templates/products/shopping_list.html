@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% load static %}
+{% load static product_display %}
 
 {% block title %}Lista de Compras{% endblock %}
 
@@ -81,21 +81,21 @@
                             </td>
 
                             <td>
-                                {{ row.current_stock|floatformat:-6 }}
+                                {{ row.current_stock|physical_quantity:row.product.stock_base_unit }}
                             </td>
 
                             <td>
-                                {{ row.recommended_stock|floatformat:-6 }}
+                                {{ row.recommended_stock|physical_quantity:row.product.stock_base_unit }}
                                 {% if not row.recommended_defined %}
                                     <small>Não definido</small>
                                 {% endif %}
                             </td>
 
                             <td class="shopping-buy-quantity">
-                                {{ row.suggested_quantity|floatformat:-6 }}
+                                {{ row.suggested_quantity|physical_quantity:row.product.stock_base_unit }}
                             </td>
 
-                            <td>{{ row.unit }}</td>
+                            <td>{{ row.product.stock_base_unit_label }}</td>
 
                             <td>
                                 <span class="shopping-note-line"></span>
@@ -132,12 +132,12 @@
                         <div class="shopping-mobile-grid">
                             <div>
                                 <span>Atual</span>
-                                <strong>{{ row.current_stock|floatformat:-6 }} {{ row.unit }}</strong>
+                                <strong>{{ row.current_stock|physical_quantity:row.product.stock_base_unit }}</strong>
                             </div>
 
                             <div>
                                 <span>Recomendado</span>
-                                <strong>{{ row.recommended_stock|floatformat:-6 }} {{ row.unit }}</strong>
+                                <strong>{{ row.recommended_stock|physical_quantity:row.product.stock_base_unit }}</strong>
                                 {% if not row.recommended_defined %}
                                     <small>Não definido</small>
                                 {% endif %}
@@ -145,7 +145,7 @@
 
                             <div class="shopping-mobile-buy">
                                 <span>Comprar</span>
-                                <strong>{{ row.suggested_quantity|floatformat:-6 }} {{ row.unit }}</strong>
+                                <strong>{{ row.suggested_quantity|physical_quantity:row.product.stock_base_unit }}</strong>
                             </div>
                         </div>
 

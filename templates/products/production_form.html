@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% load static %}
+{% load static product_display %}
 
 {% block title %}Produzir — {{ product.name }}{% endblock %}
 
@@ -18,9 +18,9 @@
         </div>
         {% if potential %}
         <div class="production-potential">
-            <span>Potencial atual</span>
-            <strong>{{ potential.available_quantity|floatformat:0 }}</strong>
-            <small>Limitante: {{ potential.limiting_component.ingredient.name }}</small>
+            <span>Pode preparar</span>
+            <strong>+{{ potential.available_quantity|decimal_ptbr }}</strong>
+            <small>Limitado por {{ potential.limiting_component.ingredient.name }}</small>
         </div>
         {% endif %}
     </header>
@@ -60,17 +60,17 @@
         </section>
 
         <section class="production-card">
-            <h2>Consumo dos componentes</h2>
-            <p class="production-hint">O consumo real inicia com o valor teórico. A perda informada já faz parte desse consumo e não gera outra baixa.</p>
+            <h2>Ingredientes da produção</h2>
+            <p class="production-hint">O consumo real inicia com o valor previsto. A perda informada já faz parte desse consumo e não gera outra baixa.</p>
             <div class="component-list">
                 {% for row in rows %}
-                <article class="production-component" data-per-unit="{{ row.component.quantity_per_sale_unit }}">
+                <article class="production-component" data-per-unit="{{ row.component.quantity_per_sale_unit }}" data-base-unit="{{ row.component.base_unit }}">
                     {{ row.form.component_id }}
                     <div class="component-title">
                         <div>
                             <h3>{{ row.component.ingredient.name }}</h3>
                             <span>
-                                Estoque: {{ row.physical_stock|floatformat:-6 }} {{ row.component.base_unit }}
+                                Saldo disponível: {{ row.physical_stock|physical_quantity:row.component.base_unit }}
                             </span>
                         </div>
                         <span class="component-status {% if row.sufficient %}component-status--ok{% else %}component-status--error{% endif %}">
@@ -78,18 +78,20 @@
                         </span>
                     </div>
                     <div class="component-theoretical">
-                        Teórico: <strong data-theoretical>{{ row.component.total_quantity|floatformat:-6 }}</strong>
-                        {{ row.component.base_unit }}
+                        Consumo previsto:
+                        <strong data-theoretical>{{ row.component.total_quantity|physical_quantity:row.component.base_unit }}</strong>
                     </div>
                     <div class="production-grid production-grid--component">
                         <div class="production-field">
                             <label for="{{ row.form.actual_quantity.id_for_label }}">Consumo real ({{ row.component.base_unit }})</label>
                             {{ row.form.actual_quantity }}
+                            <small class="physical-input-preview" data-actual-display>{{ row.form.actual_quantity.value|physical_quantity:row.component.base_unit }}</small>
                             {% for error in row.form.actual_quantity.errors %}<small class="field-error">{{ error }}</small>{% endfor %}
                         </div>
                         <div class="production-field">
                             <label for="{{ row.form.loss_quantity.id_for_label }}">Perda incluída ({{ row.component.base_unit }})</label>
                             {{ row.form.loss_quantity }}
+                            <small class="physical-input-preview" data-loss-display>{{ row.form.loss_quantity.value|physical_quantity:row.component.base_unit }}</small>
                             {% for error in row.form.loss_quantity.errors %}<small class="field-error">{{ error }}</small>{% endfor %}
                         </div>
                     </div>
@@ -105,5 +107,6 @@
         </button>
     </form>
 </main>
+<script src="{% static 'js/quantity_format.js' %}"></script>
 <script src="{% static 'js/production_form.js' %}"></script>
 {% endblock %}

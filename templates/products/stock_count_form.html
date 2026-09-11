@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% load static %}
+{% load static product_display %}
 
 {% block title %}Conferência de estoque{% endblock %}
 
@@ -62,15 +62,17 @@
                         data-id="{{ product.id }}"
                         data-name="{{ product.name }}"
                         data-category="{{ product.category.name|default:'' }}"
-                        data-unit="{{ product.stock_base_unit_label }}"
+                        data-unit="{{ product.stock_base_unit }}"
+                        data-unit-label="{{ product.stock_base_unit_label }}"
                         data-stock="{{ product.current_stock|floatformat:-6 }}"
+                        data-stock-display="{{ product.current_stock|physical_quantity:product.stock_base_unit }}"
                         data-search="{{ product.name|lower }} {{ product.category.name|default:''|lower }} {{ product.stock_base_unit_label|lower }} {{ product.sale_price }}"
                     >
                         <div class="product-name">{{ product.name }}</div>
                         <div class="product-meta">
                             {{ product.category.name|default:"Sem categoria" }}<br>
-                            Estoque esperado: {{ product.current_stock|floatformat:-6 }} {{ product.stock_base_unit_label }}<br>
-                            Unidade-base: {{ product.stock_base_unit_label }}
+                            Estoque esperado: {{ product.current_stock|physical_quantity:product.stock_base_unit }}<br>
+                            Unidade de controle: {{ product.stock_base_unit_label }}
                         </div>
                     </button>
                 {% empty %}
@@ -78,7 +80,7 @@
                 {% endfor %}
             </div>
 
-            <label for="real_quantity">Contagem real</label>
+            <label for="real_quantity">Contagem real <span id="count_unit_hint"></span></label>
             <input
                 type="text"
                 name="real_quantity"
@@ -104,5 +106,6 @@
 {% endblock %}
 
 {% block extra_js %}
+    <script src="{% static 'js/quantity_format.js' %}"></script>
     <script src="{% static 'js/stock_count_form.js' %}"></script>
 {% endblock %}

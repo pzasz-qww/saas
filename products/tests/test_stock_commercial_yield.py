@@ -27,8 +27,10 @@ class StockCommercialYieldTests(TestCase):
         response = self.client.get(reverse("products:stock_dashboard"))
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "50 mL por dose")
-        self.assertContains(response, "90 doses completas")
+        self.assertContains(response, "Estoque físico")
+        self.assertContains(response, "4,5 L")
+        self.assertContains(response, "Dose: 50 mL")
+        self.assertContains(response, "Rende 90 doses")
 
     def test_pre_portioned_own_stock_is_reported_as_ready_for_sale(self):
         product = make_product(
@@ -44,9 +46,12 @@ class StockCommercialYieldTests(TestCase):
 
         response = self.client.get(reverse("products:stock_dashboard"))
 
-        self.assertContains(response, "Prontas para venda:")
-        self.assertContains(response, "12")
-        self.assertContains(response, "não possui componentes")
+        self.assertContains(response, "12 prontas para venda")
+        self.assertContains(response, "Estoque físico: 5 kg")
+        self.assertContains(
+            response,
+            "Cadastre ao menos um ingrediente antes de vender ou produzir este produto.",
+        )
 
     def test_on_demand_dashboard_shows_limiting_ingredient_and_yields(self):
         drink = make_product(
@@ -88,11 +93,10 @@ class StockCommercialYieldTests(TestCase):
 
         response = self.client.get(reverse("products:stock_dashboard"))
 
-        self.assertContains(response, "Disponível:")
-        self.assertContains(response, "8")
-        self.assertContains(response, "Limitante:")
+        self.assertContains(response, "8 disponíveis")
+        self.assertContains(response, "Limitado por")
         self.assertContains(response, "Limão")
         self.assertContains(response, "Cachaça:")
-        self.assertContains(response, "permite 20")
-        self.assertContains(response, "Disponível")
+        self.assertContains(response, "50 mL por item")
+        self.assertContains(response, "rende 20")
         self.assertNotContains(response, "Esgotado por ingrediente")

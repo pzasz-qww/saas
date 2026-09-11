@@ -433,7 +433,7 @@ class ProductComponentForm(forms.Form):
         if normalized.dimension != ingredient.stock_dimension:
             self.add_error(
                 "unit",
-                "A unidade é incompatível com a dimensão de estoque do ingrediente.",
+                "A unidade escolhida não corresponde ao tipo de estoque deste ingrediente.",
             )
 
         return cleaned_data

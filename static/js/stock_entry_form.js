@@ -109,14 +109,11 @@ function updateCalculationPreview() {
         return;
     }
 
-    const formatter = new Intl.NumberFormat("pt-BR", {
-        style: "currency",
-        currency: "BRL",
-    });
+    const { formatCurrency } = window.BarFormatting;
     if (selectedPriceMode() === "per_unit") {
-        preview.textContent = `Total estimado: ${formatter.format(quantity * price)}`;
+        preview.textContent = `Total estimado: ${formatCurrency(quantity * price)}`;
     } else {
-        preview.textContent = `Pre\u00e7o equivalente: ${formatter.format(price / quantity)} por ${unitLabels[unit]}`;
+        preview.textContent = `Pre\u00e7o equivalente: ${formatCurrency(price / quantity)} por ${unitLabels[unit]}`;
     }
     preview.classList.add("is-visible");
 }

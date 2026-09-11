@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% load static %}
+{% load static product_display %}
 
 {% block title %}{% if editing %}Editar {{ product.name }}{% else %}Novo produto{% endif %}{% endblock %}
 
@@ -41,7 +41,7 @@
                     {% if edit_availability %}
                         <div class="summary-value">
                             Disponível para venda:
-                            <strong>{{ edit_availability.available_quantity|floatformat:0 }}</strong>
+                            <strong>{{ edit_availability.available_quantity|decimal_ptbr }}</strong>
                         </div>
                         <p>
                             Ingrediente limitante:
@@ -50,8 +50,9 @@
                         <ul>
                             {% for component in edit_availability.component_availability %}
                                 <li>
-                                    {{ component.ingredient.name }} permite
-                                    {{ component.available_quantity|floatformat:0 }} item(ns)
+                                    {{ component.ingredient.name }} —
+                                    {{ component.quantity_per_sale_unit|physical_quantity:component.base_unit }} por item;
+                                    permite {{ component.available_quantity|decimal_ptbr }}
                                 </li>
                             {% endfor %}
                         </ul>
@@ -67,7 +68,7 @@
                             <span>Prontos para venda</span>
                             <strong>
                                 {% if edit_ready_availability %}
-                                    {{ edit_ready_availability.available_sale_quantity|floatformat:0 }}
+                                    {{ edit_ready_availability.available_sale_quantity|decimal_ptbr }}
                                 {% else %}
                                     Indisponível
                                 {% endif %}
@@ -77,7 +78,7 @@
                             <span>Pode preparar</span>
                             <strong>
                                 {% if edit_production_potential %}
-                                    {{ edit_production_potential.available_quantity|floatformat:0 }}
+                                    +{{ edit_production_potential.available_quantity|decimal_ptbr }}
                                 {% else %}
                                     Não calculado
                                 {% endif %}

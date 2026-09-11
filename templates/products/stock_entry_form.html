@@ -85,7 +85,7 @@
                         <span class="product-name">{{ product.name }}</span>
                         <span class="product-meta">
                             {{ product.category.name|default:"Sem categoria" }}<br>
-                            Estoque: {{ product.get_stock_dimension_display }}
+                            Estoque controlado em: {{ product.get_stock_dimension_display }}
                         </span>
                     </button>
                 {% empty %}
@@ -163,5 +163,6 @@
 {% endblock %}
 
 {% block extra_js %}
+    <script src="{% static 'js/quantity_format.js' %}"></script>
     <script src="{% static 'js/stock_entry_form.js' %}"></script>
 {% endblock %}

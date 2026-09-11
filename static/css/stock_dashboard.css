@@ -227,6 +227,25 @@
     line-height: 1.4;
 }
 
+.stock-primary-value > span,
+.stock-physical-detail {
+    display: block;
+    color: #6b7280;
+    font-size: 12px;
+}
+
+.stock-primary-value > strong {
+    display: block;
+    margin-top: 2px;
+    color: #111827;
+    font-size: 17px;
+    line-height: 1.25;
+}
+
+.stock-physical-detail {
+    margin-top: 5px;
+}
+
 .recipe-availability {
     margin-top: 6px;
     color: #374151;

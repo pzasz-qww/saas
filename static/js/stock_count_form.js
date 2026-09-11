@@ -20,13 +20,6 @@ function parseNumber(value) {
     return number;
 }
 
-function formatQuantity(value) {
-    return value.toLocaleString("pt-BR", {
-        minimumFractionDigits: 0,
-        maximumFractionDigits: 6,
-    });
-}
-
 function filterProducts() {
     const query = normalizeText(document.getElementById("product_search").value);
     const cards = document.querySelectorAll(".product-card");
@@ -62,7 +55,7 @@ function selectProduct(card) {
     const selectedBox = document.getElementById("selected_product_box");
     selectedBox.style.display = "block";
     const details = document.createElement("small");
-    details.textContent = `${selectedCategory} · Estoque esperado: ${formatQuantity(selectedStock)} ${selectedUnit}`;
+    details.textContent = `${selectedCategory} · Estoque esperado: ${card.dataset.stockDisplay}`;
     selectedBox.replaceChildren(
         document.createTextNode(`Produto selecionado: ${selectedName}`),
         document.createElement("br"),
@@ -74,6 +67,7 @@ function selectProduct(card) {
     });
 
     card.classList.add("selected");
+    document.getElementById("count_unit_hint").textContent = `(${card.dataset.unitLabel})`;
 
     calculateDifference();
 }
@@ -88,6 +82,7 @@ function calculateDifference() {
     }
 
     const difference = realQuantity - selectedStock;
+    const { formatQuantity } = window.BarFormatting;
 
     differenceBox.style.display = "block";
 
@@ -96,19 +91,23 @@ function calculateDifference() {
 
     if (difference > 0) {
         differenceValue.className = "difference-positive";
-        differenceValue.textContent = `+${formatQuantity(difference)} ${selectedUnit}`;
+        differenceValue.textContent = `+${formatQuantity(difference, selectedUnit)}`;
         explanation = "Será criado um ajuste positivo.";
     } else if (difference < 0) {
         differenceValue.className = "difference-negative";
-        differenceValue.textContent = `${formatQuantity(difference)} ${selectedUnit}`;
+        differenceValue.textContent = formatQuantity(difference, selectedUnit);
         explanation = "Será criado um ajuste negativo.";
     } else {
         differenceValue.className = "difference-zero";
-        differenceValue.textContent = `0 ${selectedUnit}`;
+        differenceValue.textContent = formatQuantity(0, selectedUnit);
         explanation = "A conferência será registrada sem alterar o estoque.";
     }
 
     differenceBox.replaceChildren(
+        document.createTextNode(`Estoque esperado: ${formatQuantity(selectedStock, selectedUnit)}`),
+        document.createElement("br"),
+        document.createTextNode(`Contagem informada: ${formatQuantity(realQuantity, selectedUnit)}`),
+        document.createElement("br"),
         document.createTextNode("Diferença: "),
         differenceValue,
         document.createElement("br"),

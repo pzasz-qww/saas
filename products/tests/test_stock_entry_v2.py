@@ -318,6 +318,23 @@ class StockEntryViewV2Tests(TestCase):
         self.assertEqual(entry.total_cost, Decimal("750.00"))
         self.assertEqual(entry.created_by, self.owner)
 
+    def test_success_message_preserves_input_unit_and_formats_total_cost(self):
+        response = self.client.post(
+            self.url,
+            self.valid_post(
+                input_quantity="5",
+                price_mode="total",
+                price="140",
+            ),
+            follow=True,
+        )
+
+        self.assertContains(
+            response,
+            "Entrada criada: Carne da tela recebeu 5 kg. "
+            "Custo total: R$ 140,00.",
+        )
+
     def test_invalid_post_preserves_values_and_shows_specific_errors(self):
         response = self.client.post(
             self.url,
@@ -392,6 +409,7 @@ class StockEntryViewV2Tests(TestCase):
 
         dashboard = self.client.get(reverse("products:stock_dashboard"))
         count_form = self.client.get(reverse("products:stock_count_adjust"))
-        self.assertRegex(dashboard.content.decode(), r"30000\s+g")
+        self.assertContains(dashboard, "30 kg")
         self.assertContains(count_form, 'data-unit="g"', html=False)
-        self.assertContains(count_form, "Estoque esperado: 30000 g")
+        self.assertContains(count_form, 'data-stock-display="30 kg"', html=False)
+        self.assertContains(count_form, "Estoque esperado: 30 kg")

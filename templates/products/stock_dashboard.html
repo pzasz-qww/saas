@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% load static %}
+{% load static product_display %}
 
 {% block title %}Central de Estoque{% endblock %}
 
@@ -181,70 +181,11 @@
                             </td>
 
                             <td>
-                                {% if product.recipe_availability %}
-                                    <strong>
-                                        Disponível:
-                                        {{ product.recipe_availability.available_quantity|floatformat:0 }}
-                                    </strong>
-                                    <div class="recipe-availability">
-                                        Limitante:
-                                        {{ product.recipe_availability.limiting_component.ingredient.name }}
-                                        <ul>
-                                            {% for component in product.recipe_availability.component_availability %}
-                                                <li>
-                                                    {{ component.ingredient.name }}:
-                                                    permite {{ component.available_quantity|floatformat:0 }}
-                                                    ({{ component.quantity_per_sale_unit|floatformat:-6 }}
-                                                    {{ component.base_unit }}/item)
-                                                </li>
-                                            {% endfor %}
-                                        </ul>
-                                    </div>
-                                {% elif product.recipe_error %}
-                                    <div class="recipe-error">{{ product.recipe_error }}</div>
-                                    {% if can_create_stock_entry %}
-                                        <a href="{% url 'products:product_edit' product.id %}" class="product-edit-link">
-                                            Configurar ingredientes
-                                        </a>
-                                    {% endif %}
-                                {% else %}
-                                {{ product.current_stock|floatformat:-6 }}
-                                {{ product.stock_base_unit_label }}
-                                {% if product.sale_availability %}
-                                    <div class="commercial-yield">
-                                        {% if product.preparation_mode == "pre_portioned" %}
-                                            Prontas para venda:
-                                            {{ product.sale_availability.available_sale_quantity|floatformat:0 }}
-                                        {% elif product.sale_form == "dose" %}
-                                            {{ product.sale_availability.quantity_per_sale_unit|floatformat:-6 }} mL por dose<br>
-                                            Equivale a {{ product.sale_availability.available_sale_quantity|floatformat:0 }} doses completas
-                                        {% else %}
-                                            {{ product.sale_availability.quantity_per_sale_unit|floatformat:-6 }} g por porção<br>
-                                            Rendimento físico potencial:
-                                            {{ product.sale_availability.available_sale_quantity|floatformat:0 }} porções completas
-                                            {% if product.sale_availability.physical_remainder %}
-                                                (sobra {{ product.sale_availability.physical_remainder|floatformat:-6 }} g)
-                                            {% endif %}
-                                        {% endif %}
-                                    </div>
-                                {% endif %}
-                                {% if product.production_potential %}
-                                    <div class="production-summary">
-                                        <strong>Potencial adicional: {{ product.production_potential.available_quantity|floatformat:0 }}</strong><br>
-                                        Limitante: {{ product.production_potential.limiting_component.ingredient.name }}
-                                        {% if can_adjust_stock %}
-                                            <br><a href="{% url 'products:production_create' product.id %}" class="production-link">Produzir</a>
-                                        {% endif %}
-                                    </div>
-                                {% elif product.production_error %}
-                                    <div class="recipe-error">{{ product.production_error }}</div>
-                                {% endif %}
-                                {% endif %}
+                                {% include "products/includes/stock_quantity_summary.html" %}
                             </td>
 
                             <td>
-                                {{ product.minimum_quantity|floatformat:-6 }}
-                                {{ product.stock_base_unit_label }}
+                                {{ product.minimum_quantity|physical_quantity:product.stock_base_unit }}
                             </td>
 
                             <td>
@@ -254,23 +195,23 @@
                             </td>
 
                             <td class="money">
-                                R$ {{ product.average_cost|floatformat:2 }}
+                                {{ product.average_cost|brl }}
                             </td>
 
                             <td class="money">
-                                R$ {{ product.sale_price|floatformat:2 }}
+                                {{ product.sale_price|brl }}
                             </td>
 
                             <td class="money">
-                                R$ {{ product.profit_per_unit|floatformat:2 }}
+                                {{ product.profit_per_unit|brl }}
                             </td>
 
                             <td class="money">
-                                R$ {{ product.stock_value|floatformat:2 }}
+                                {{ product.stock_value|brl }}
                             </td>
 
                             <td class="money">
-                                R$ {{ product.potential_profit|floatformat:2 }}
+                                {{ product.potential_profit|brl }}
                             </td>
                         </tr>
                     {% empty %}
@@ -315,101 +256,39 @@
                         </div>
 
                         <div class="stock-mobile-quantity-block">
-                            {% if product.recipe_availability %}
-                            <span>Disponível pelos ingredientes</span>
-                            <strong>
-                                {{ product.recipe_availability.available_quantity|floatformat:0 }}
-                            </strong>
-                            <small class="recipe-availability">
-                                Ingrediente limitante:
-                                {{ product.recipe_availability.limiting_component.ingredient.name }}
-                                {% for component in product.recipe_availability.component_availability %}
-                                    <br>{{ component.ingredient.name }}:
-                                    permite {{ component.available_quantity|floatformat:0 }}
-                                    ({{ component.quantity_per_sale_unit|floatformat:-6 }}
-                                    {{ component.base_unit }}/item)
-                                {% endfor %}
-                            </small>
-                            {% elif product.recipe_error %}
-                            <span>Receita indisponível</span>
-                            <small class="recipe-error">{{ product.recipe_error }}</small>
-                            {% if can_create_stock_entry %}
-                                <a href="{% url 'products:product_edit' product.id %}" class="product-edit-link">
-                                    Configurar ingredientes
-                                </a>
-                            {% endif %}
-                            {% else %}
-                            <span>Quantidade atual</span>
-                            <strong>
-                                {{ product.current_stock|floatformat:-6 }}
-                                {{ product.stock_base_unit_label }}
-                            </strong>
-
-                            {% if product.sale_availability %}
-                                <small class="commercial-yield">
-                                    {% if product.preparation_mode == "pre_portioned" %}
-                                        Prontas para venda:
-                                        {{ product.sale_availability.available_sale_quantity|floatformat:0 }}
-                                    {% elif product.sale_form == "dose" %}
-                                        {{ product.sale_availability.quantity_per_sale_unit|floatformat:-6 }} mL por dose ·
-                                        {{ product.sale_availability.available_sale_quantity|floatformat:0 }} doses completas
-                                    {% else %}
-                                        {{ product.sale_availability.quantity_per_sale_unit|floatformat:-6 }} g por porção ·
-                                        rendimento físico potencial:
-                                        {{ product.sale_availability.available_sale_quantity|floatformat:0 }} porções completas
-                                        {% if product.sale_availability.physical_remainder %}
-                                            · sobra {{ product.sale_availability.physical_remainder|floatformat:-6 }} g
-                                        {% endif %}
-                                    {% endif %}
-                                </small>
-                            {% endif %}
-
-                            {% if product.production_potential %}
-                                <small class="production-summary">
-                                    <strong>Potencial adicional: {{ product.production_potential.available_quantity|floatformat:0 }}</strong>
-                                    · limitante: {{ product.production_potential.limiting_component.ingredient.name }}
-                                    {% if can_adjust_stock %}
-                                        · <a href="{% url 'products:production_create' product.id %}" class="production-link">Produzir</a>
-                                    {% endif %}
-                                </small>
-                            {% elif product.production_error %}
-                                <small class="recipe-error">{{ product.production_error }}</small>
-                            {% endif %}
-
+                            {% include "products/includes/stock_quantity_summary.html" %}
                             {% if product.minimum_quantity %}
                                 <small>
                                     Estoque recomendado:
-                                    {{ product.minimum_quantity|floatformat:-6 }}
-                                    {{ product.stock_base_unit_label }}
+                                    {{ product.minimum_quantity|physical_quantity:product.stock_base_unit }}
                                 </small>
-                            {% endif %}
                             {% endif %}
                         </div>
 
                         <div class="stock-mobile-financial-grid">
                             <div class="stock-mobile-metric stock-mobile-metric--sale">
                                 <span>Preço de venda</span>
-                                <strong>R$ {{ product.sale_price|floatformat:2 }}</strong>
+                                <strong>{{ product.sale_price|brl }}</strong>
                             </div>
 
                             <div class="stock-mobile-metric">
                                 <span>Custo médio</span>
-                                <strong>R$ {{ product.average_cost|floatformat:2 }}</strong>
+                                <strong>{{ product.average_cost|brl }}</strong>
                             </div>
 
                             <div class="stock-mobile-metric">
                                 <span>Lucro por unidade</span>
-                                <strong>R$ {{ product.profit_per_unit|floatformat:2 }}</strong>
+                                <strong>{{ product.profit_per_unit|brl }}</strong>
                             </div>
 
                             <div class="stock-mobile-metric">
                                 <span>Capital em estoque</span>
-                                <strong>R$ {{ product.stock_value|floatformat:2 }}</strong>
+                                <strong>{{ product.stock_value|brl }}</strong>
                             </div>
 
                             <div class="stock-mobile-metric">
                                 <span>Lucro potencial</span>
-                                <strong>R$ {{ product.potential_profit|floatformat:2 }}</strong>
+                                <strong>{{ product.potential_profit|brl }}</strong>
                             </div>
                         </div>
                     </article>

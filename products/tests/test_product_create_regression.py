@@ -236,7 +236,7 @@ class ProductCreateRegressionTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(
             response,
-            "A unidade é incompatível com a dimensão de estoque do ingrediente.",
+            "A unidade escolhida não corresponde ao tipo de estoque deste ingrediente.",
         )
         self.assertFalse(Product.objects.filter(name="Drink incompatível").exists())
 
