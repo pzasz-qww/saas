@@ -10,30 +10,44 @@
     <header class="production-header">
         <div>
             <span class="production-eyebrow">Estoque preparado</span>
-            <h1>Histórico de produções</h1>
-            <p>Consulte rendimento, custos, lotes e responsáveis.</p>
+            <h1>Histórico de produções{% if selected_product %} — {{ selected_product.name }}{% endif %}</h1>
+            <p>Consulte quantidades, rendimento, custo e situação de cada produção.</p>
         </div>
     </header>
-    <section class="production-card production-table-wrap">
+
+    <section class="production-card production-table-wrap production-history-desktop">
         <table class="production-table">
-            <thead><tr><th>Produção</th><th>Produto</th><th>Planejado</th><th>Produzido</th><th>Rendimento</th><th>Custo</th><th>Data</th><th>Status</th></tr></thead>
+            <thead><tr><th>Produto</th><th>Data</th><th>Produzido</th><th>Rendimento</th><th>Custo/un.</th><th>Status</th><th></th></tr></thead>
             <tbody>
             {% for production in productions %}
                 <tr>
-                    <td><a href="{% url 'products:production_detail' production.id %}">#{{ production.id }}</a></td>
                     <td>{{ production.product.name }}</td>
-                    <td>{{ production.planned_quantity|decimal_ptbr }}</td>
+                    <td>{{ production.production_date|date:"d/m/Y" }}</td>
                     <td>{{ production.produced_quantity|decimal_ptbr }}</td>
                     <td>{{ production.yield_percentage|decimal_ptbr }}%</td>
-                    <td>{{ production.total_cost|brl }}</td>
-                    <td>{{ production.production_date|date:"d/m/Y" }}</td>
+                    <td>{{ production.unit_cost|brl }}</td>
                     <td>{{ production.get_status_display }}</td>
+                    <td><a href="{% url 'products:production_detail' production.id %}">Ver detalhes</a></td>
                 </tr>
-            {% empty %}
-                <tr><td colspan="8">Nenhuma produção registrada.</td></tr>
-            {% endfor %}
+            {% empty %}<tr><td colspan="7">Nenhuma produção registrada.</td></tr>{% endfor %}
             </tbody>
         </table>
+    </section>
+
+    <section class="production-history-mobile" aria-label="Histórico de produções em cartões">
+        {% for production in productions %}
+        <article class="production-history-card">
+            <span class="production-history-date">{{ production.production_date|date:"d/m/Y" }}</span>
+            <h2>{{ production.product.name }}</h2>
+            <strong>{{ production.produced_quantity|decimal_ptbr }} produzidas</strong>
+            <dl>
+                <div><dt>Rendimento</dt><dd>{{ production.yield_percentage|decimal_ptbr }}%</dd></div>
+                <div><dt>Custo</dt><dd>{{ production.unit_cost|brl }}/un</dd></div>
+                <div><dt>Status</dt><dd>{{ production.get_status_display }}</dd></div>
+            </dl>
+            <a href="{% url 'products:production_detail' production.id %}" class="production-card-action">Ver detalhes</a>
+        </article>
+        {% empty %}<div class="production-card">Nenhuma produção registrada.</div>{% endfor %}
     </section>
 </main>
 {% endblock %}

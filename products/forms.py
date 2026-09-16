@@ -496,23 +496,27 @@ class ProductionForm(forms.Form):
         decimal_places=6,
         min_value=Decimal("0.000001"),
         label="Quantidade planejada",
-        widget=forms.NumberInput(attrs={"step": "0.000001", "min": "0.000001"}),
+        widget=forms.NumberInput(
+            attrs={"step": "0.000001", "min": "0.000001", "inputmode": "decimal"}
+        ),
     )
     produced_quantity = CommaDecimalField(
         max_digits=20,
         decimal_places=6,
         min_value=Decimal("0.000001"),
         label="Quantidade realmente produzida",
-        widget=forms.NumberInput(attrs={"step": "0.000001", "min": "0.000001"}),
+        widget=forms.NumberInput(
+            attrs={"step": "0.000001", "min": "0.000001", "inputmode": "decimal"}
+        ),
     )
     production_date = forms.DateField(
         label="Data da produção",
-        widget=forms.DateInput(attrs={"type": "date"}),
+        widget=forms.DateInput(format="%Y-%m-%d", attrs={"type": "date"}),
     )
     expiration_date = forms.DateField(
         required=False,
         label="Validade do lote produzido",
-        widget=forms.DateInput(attrs={"type": "date"}),
+        widget=forms.DateInput(format="%Y-%m-%d", attrs={"type": "date"}),
     )
     notes = forms.CharField(
         required=False,
@@ -543,7 +547,9 @@ class ProductionConsumptionForm(forms.Form):
         decimal_places=6,
         min_value=Decimal("0.000001"),
         label="Consumo real",
-        widget=forms.NumberInput(attrs={"step": "0.000001", "min": "0.000001"}),
+        widget=forms.NumberInput(
+            attrs={"step": "0.000001", "min": "0.000001", "inputmode": "decimal"}
+        ),
     )
     loss_quantity = CommaDecimalField(
         max_digits=20,
@@ -552,7 +558,9 @@ class ProductionConsumptionForm(forms.Form):
         required=False,
         initial=Decimal("0"),
         label="Perda dentro do consumo",
-        widget=forms.NumberInput(attrs={"step": "0.000001", "min": "0"}),
+        widget=forms.NumberInput(
+            attrs={"step": "0.000001", "min": "0", "inputmode": "decimal"}
+        ),
     )
 
     def clean(self):

@@ -4,6 +4,7 @@ from xml.sax.saxutils import escape
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
+from django.core import signing
 from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.db.models import (
@@ -17,8 +18,9 @@ from django.db.models import (
     When,
 )
 from django.db.models.functions import Coalesce
-from django.http import HttpResponse
+from django.http import Http404, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_GET, require_POST
 from reportlab.lib import colors
@@ -43,7 +45,7 @@ from .forms import (
     ProductionForm,
     StockEntryForm,
 )
-from .models import Product, ProductComponent, Production, Unit
+from .models import Product, ProductComponent, Production, StockEntry, Unit
 from .presentation import (
     format_decimal_input,
     format_money,
@@ -66,6 +68,7 @@ from .services import (
     StockEntryValidationError,
     StockServiceError,
     apply_stock_count,
+    calculate_fifo_cost,
     create_stock_entry,
 )
 
@@ -87,6 +90,16 @@ def parse_decimal(value):
     return parsed if parsed.is_finite() else None
 
 
+def _query_selected_product(products, raw_product_id):
+    if raw_product_id in (None, ""):
+        return None
+    try:
+        product_id = int(raw_product_id)
+    except (TypeError, ValueError):
+        raise Http404("Produto inválido.") from None
+    return get_object_or_404(products, pk=product_id)
+
+
 def _get_stock_products_queryset(company):
     current_stock_field = DecimalField(max_digits=20, decimal_places=6)
     average_cost_field = DecimalField(max_digits=30, decimal_places=10)
@@ -101,6 +114,7 @@ def _get_stock_products_queryset(company):
         Product.objects
         .filter(company=company, active=True)
         .select_related("category", "company", "unit")
+        .prefetch_related("components__ingredient")
         .annotate(
             annotated_current_stock=Coalesce(
                 Sum(
@@ -976,24 +990,29 @@ def stock_entry_create(request):
         .order_by("category__name", "name")
     )
 
-    submitted_product_id = (
-        request.POST.get("product") if request.method == "POST" else None
-    )
-    try:
-        submitted_product_id = int(submitted_product_id)
-    except (TypeError, ValueError):
-        submitted_product_id = None
-    if submitted_product_id is not None:
-        get_object_or_404(
-            Product,
-            pk=submitted_product_id,
-            company=company,
-            active=True,
+    submitted_product_id = request.POST.get("product") if request.method == "POST" else None
+    selected_product = None
+    if request.method == "GET":
+        selected_product = _query_selected_product(
+            products,
+            request.GET.get("produto"),
         )
+    elif submitted_product_id not in (None, ""):
+        try:
+            int(submitted_product_id)
+        except (TypeError, ValueError):
+            selected_product = None
+        else:
+            selected_product = _query_selected_product(products, submitted_product_id)
 
     form = StockEntryForm(
         request.POST if request.method == "POST" else None,
         company=company,
+        initial=(
+            {"product": selected_product.pk}
+            if selected_product is not None and request.method == "GET"
+            else None
+        ),
     )
     if request.method == "POST" and form.is_valid():
         data = form.cleaned_data
@@ -1024,10 +1043,6 @@ def stock_entry_create(request):
             )
             return redirect("products:stock_dashboard")
 
-    selected_product = None
-    if form.is_bound and submitted_product_id is not None:
-        selected_product = products.filter(pk=submitted_product_id).first()
-
     return render(
         request,
         "products/stock_entry_form.html",
@@ -1054,6 +1069,13 @@ def stock_count_adjust(request):
         .select_related("category", "unit")
         .order_by("category__name", "name")
     )
+
+    selected_product = None
+    if request.method == "GET":
+        selected_product = _query_selected_product(
+            products,
+            request.GET.get("produto"),
+        )
 
     if request.method == "POST":
         product_id = request.POST.get("product")
@@ -1114,6 +1136,7 @@ def stock_count_adjust(request):
         "products/stock_count_form.html",
         {
             "products": products,
+            "selected_product": selected_product,
         },
     )
 
@@ -1129,7 +1152,7 @@ def _pre_portioned_product(company, product_id):
     )
 
 
-def _production_rows(expanded_components, formset):
+def _production_rows(expanded_components, formset, *, show_requirements):
     availability_by_ingredient = {}
     if expanded_components:
         potential = get_production_potential(
@@ -1149,6 +1172,7 @@ def _production_rows(expanded_components, formset):
                 "physical_stock": (
                     availability.physical_stock if availability else Decimal("0")
                 ),
+                "show_requirement": show_requirements,
                 "sufficient": (
                     availability is not None
                     and availability.physical_stock >= component.total_quantity
@@ -1156,6 +1180,108 @@ def _production_rows(expanded_components, formset):
             }
         )
     return rows
+
+
+def _production_component_values(formset, expanded_components, form):
+    component_values = {
+        component_form.cleaned_data["component_id"]: {
+            "actual_quantity": component_form.cleaned_data["actual_quantity"],
+            "loss_quantity": component_form.cleaned_data["loss_quantity"],
+        }
+        for component_form in formset.forms
+    }
+    expected_ids = {
+        component.source_component.pk for component in expanded_components
+    }
+    if set(component_values) != expected_ids:
+        form.add_error(
+            None,
+            "Informe o consumo real de todos os ingredientes da produção.",
+        )
+        return None
+    return component_values
+
+
+def _estimate_production_cost(*, company, expanded_components, component_values):
+    product_ids = [component.ingredient.pk for component in expanded_components]
+    entries_by_product = {product_id: [] for product_id in product_ids}
+    entries = StockEntry.objects.filter(
+        company=company,
+        product_id__in=product_ids,
+        remaining_quantity__gt=0,
+    ).order_by("product_id", "created_at", "id")
+    for entry in entries:
+        entries_by_product[entry.product_id].append(entry)
+
+    total_cost = Decimal("0")
+    for component in expanded_components:
+        quantity = component_values[component.source_component.pk][
+            "actual_quantity"
+        ]
+        total_cost += calculate_fifo_cost(
+            product_id=component.ingredient.pk,
+            quantity=quantity,
+            entries=entries_by_product[component.ingredient.pk],
+        )
+    return total_cost
+
+
+def _production_preview(form, expanded_components, component_values, estimated_cost):
+    planned = form.cleaned_data["planned_quantity"]
+    produced = form.cleaned_data["produced_quantity"]
+    return {
+        "planned_quantity": planned,
+        "produced_quantity": produced,
+        "yield_percentage": produced * Decimal("100") / planned,
+        "expiration_date": form.cleaned_data.get("expiration_date"),
+        "estimated_cost": estimated_cost,
+        "components": [
+            {
+                "ingredient": component.ingredient,
+                "quantity": component_values[component.source_component.pk][
+                    "actual_quantity"
+                ],
+                "base_unit": component.base_unit,
+            }
+            for component in expanded_components
+        ],
+    }
+
+
+def _production_confirmation_payload(*, company, user, product, form, component_values):
+    expiration_date = form.cleaned_data.get("expiration_date")
+    return {
+        "company_id": company.pk,
+        "user_id": user.pk,
+        "product_id": product.pk,
+        "planned_quantity": str(form.cleaned_data["planned_quantity"]),
+        "produced_quantity": str(form.cleaned_data["produced_quantity"]),
+        "production_date": form.cleaned_data["production_date"].isoformat(),
+        "expiration_date": expiration_date.isoformat() if expiration_date else None,
+        "notes": form.cleaned_data.get("notes") or "",
+        "components": [
+            {
+                "component_id": component_id,
+                "actual_quantity": str(values["actual_quantity"]),
+                "loss_quantity": str(values["loss_quantity"]),
+            }
+            for component_id, values in sorted(component_values.items())
+        ],
+    }
+
+
+def _valid_production_confirmation(token, payload):
+    if not token:
+        return False
+    try:
+        signed_payload = signing.loads(
+            token,
+            salt="products.production-preview",
+            max_age=30 * 60,
+        )
+    except signing.BadSignature:
+        return False
+    return signed_payload == payload
 
 
 @login_required
@@ -1174,53 +1300,16 @@ def production_create(request, product_id):
         potential = None
         recipe_error = friendly_recipe_error(error)
 
+    production_preview = None
     if request.method == "POST":
         form = ProductionForm(request.POST)
         formset = ProductionConsumptionFormSet(
             request.POST,
             prefix="consumption",
         )
-        if form.is_valid() and formset.is_valid():
-            component_values = {
-                component_form.cleaned_data["component_id"]: {
-                    "actual_quantity": component_form.cleaned_data[
-                        "actual_quantity"
-                    ],
-                    "loss_quantity": component_form.cleaned_data[
-                        "loss_quantity"
-                    ],
-                }
-                for component_form in formset.forms
-            }
-            try:
-                result = create_production(
-                    company=company,
-                    product=product,
-                    planned_quantity=form.cleaned_data["planned_quantity"],
-                    produced_quantity=form.cleaned_data["produced_quantity"],
-                    production_date=form.cleaned_data["production_date"],
-                    expiration_date=form.cleaned_data.get("expiration_date"),
-                    component_values=component_values,
-                    notes=form.cleaned_data.get("notes"),
-                    created_by=request.user,
-                )
-            except (RecipeServiceError, StockServiceError) as error:
-                message = (
-                    friendly_recipe_error(error)
-                    if isinstance(error, RecipeServiceError)
-                    else str(error)
-                )
-                form.add_error(None, message)
-            else:
-                messages.success(
-                    request,
-                    f"Produção #{result.production.pk} registrada com sucesso.",
-                )
-                return redirect(
-                    "products:production_detail",
-                    production_id=result.production.pk,
-                )
-        planned = form.cleaned_data.get("planned_quantity") if form.is_bound else None
+        form_valid = form.is_valid()
+        formset_valid = formset.is_valid()
+        planned = form.cleaned_data.get("planned_quantity") if form_valid else None
         if planned is None:
             planned = parse_decimal(request.POST.get("planned_quantity"))
         expanded_components = ()
@@ -1229,17 +1318,111 @@ def production_create(request, product_id):
                 expanded_components = expand_product_components(product, planned)
             except RecipeServiceError as error:
                 recipe_error = friendly_recipe_error(error)
-        rows = _production_rows(expanded_components, formset)
-    else:
-        default_quantity = (
-            potential.available_quantity
-            if potential is not None and potential.available_quantity > 0
-            else Decimal("1")
+        rows = _production_rows(
+            expanded_components,
+            formset,
+            show_requirements=planned is not None and planned > 0,
         )
+        if form_valid and formset_valid and expanded_components and recipe_error is None:
+            component_values = _production_component_values(
+                formset,
+                expanded_components,
+                form,
+            )
+            if component_values is not None:
+                insufficient_rows = []
+                for row in rows:
+                    actual = component_values[row["component"].source_component.pk][
+                        "actual_quantity"
+                    ]
+                    row["actual_quantity"] = actual
+                    row["sufficient"] = row["physical_stock"] >= actual
+                    if not row["sufficient"]:
+                        insufficient_rows.append(row)
+                if insufficient_rows:
+                    for row in insufficient_rows:
+                        form.add_error(
+                            None,
+                            (
+                                f"Estoque insuficiente de "
+                                f"{row['component'].ingredient.name}: necessário "
+                                f"{format_quantity(row['actual_quantity'], row['component'].base_unit)}, "
+                                f"disponível {format_quantity(row['physical_stock'], row['component'].base_unit)}."
+                            ),
+                        )
+                else:
+                    try:
+                        estimated_cost = _estimate_production_cost(
+                            company=company,
+                            expanded_components=expanded_components,
+                            component_values=component_values,
+                        )
+                    except StockServiceError as error:
+                        form.add_error(None, str(error))
+                    else:
+                        production_preview = _production_preview(
+                            form,
+                            expanded_components,
+                            component_values,
+                            estimated_cost,
+                        )
+                        confirmation_payload = _production_confirmation_payload(
+                            company=company,
+                            user=request.user,
+                            product=product,
+                            form=form,
+                            component_values=component_values,
+                        )
+                        if request.POST.get("action") == "confirm":
+                            if not _valid_production_confirmation(
+                                request.POST.get("preview_token"),
+                                confirmation_payload,
+                            ):
+                                form.add_error(
+                                    None,
+                                    "Revise o resumo novamente antes de registrar a produção.",
+                                )
+                                production_preview = None
+                            else:
+                                try:
+                                    result = create_production(
+                                        company=company,
+                                        product=product,
+                                        planned_quantity=form.cleaned_data["planned_quantity"],
+                                        produced_quantity=form.cleaned_data["produced_quantity"],
+                                        production_date=form.cleaned_data["production_date"],
+                                        expiration_date=form.cleaned_data.get("expiration_date"),
+                                        component_values=component_values,
+                                        notes=form.cleaned_data.get("notes"),
+                                        created_by=request.user,
+                                    )
+                                except (RecipeServiceError, StockServiceError) as error:
+                                    message = (
+                                        friendly_recipe_error(error)
+                                        if isinstance(error, RecipeServiceError)
+                                        else str(error)
+                                    )
+                                    form.add_error(None, message)
+                                    production_preview = None
+                                else:
+                                    messages.success(
+                                        request,
+                                        "Produção registrada com sucesso.",
+                                    )
+                                    detail_url = reverse(
+                                        "products:production_detail",
+                                        args=[result.production.pk],
+                                    )
+                                    return redirect(f"{detail_url}?registrada=1")
+                        else:
+                            production_preview["confirmation_token"] = signing.dumps(
+                                confirmation_payload,
+                                salt="products.production-preview",
+                                compress=True,
+                            )
+    else:
         form = ProductionForm(
             initial={
-                "planned_quantity": format_decimal_input(default_quantity),
-                "produced_quantity": format_decimal_input(default_quantity),
                 "production_date": timezone.localdate(),
             }
         )
@@ -1248,7 +1431,7 @@ def production_create(request, product_id):
             try:
                 expanded_components = expand_product_components(
                     product,
-                    default_quantity,
+                    Decimal("1"),
                 )
             except RecipeServiceError as error:
                 recipe_error = friendly_recipe_error(error)
@@ -1256,16 +1439,18 @@ def production_create(request, product_id):
             initial=[
                 {
                     "component_id": component.source_component.pk,
-                    "actual_quantity": format_decimal_input(
-                        component.total_quantity
-                    ),
+                    "actual_quantity": None,
                     "loss_quantity": "0",
                 }
                 for component in expanded_components
             ],
             prefix="consumption",
         )
-        rows = _production_rows(expanded_components, formset)
+        rows = _production_rows(
+            expanded_components,
+            formset,
+            show_requirements=False,
+        )
 
     return render(
         request,
@@ -1277,6 +1462,7 @@ def production_create(request, product_id):
             "form": form,
             "formset": formset,
             "rows": rows,
+            "production_preview": production_preview,
         },
     )
 
@@ -1287,15 +1473,30 @@ def production_list(request):
     if not can_view_stock(request.user):
         messages.warning(request, "Você não tem permissão para ver produções.")
         return redirect("orders:pdv")
+    productions = Production.objects.filter(company=request.current_company)
+    selected_product = _query_selected_product(
+        Product.objects.filter(
+            company=request.current_company,
+            active=True,
+            inventory_role="prepared",
+            preparation_mode="pre_portioned",
+        ),
+        request.GET.get("produto"),
+    )
+    if selected_product is not None:
+        productions = productions.filter(product=selected_product)
     productions = (
-        Production.objects.filter(company=request.current_company)
+        productions
         .select_related("product", "created_by", "reversed_by")
         .order_by("-production_date", "-id")
     )
     return render(
         request,
         "products/production_list.html",
-        {"productions": productions},
+        {
+            "productions": productions,
+            "selected_product": selected_product,
+        },
     )
 
 
@@ -1336,6 +1537,7 @@ def production_detail(request, production_id):
             "production": production,
             "consumptions": consumptions,
             "output_entry": output_entry,
+            "production_registered": request.GET.get("registrada") == "1",
             "can_reverse": (
                 can_adjust_stock(request.user)
                 and production.status == Production.STATUS_COMPLETED

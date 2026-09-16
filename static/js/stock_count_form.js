@@ -146,3 +146,6 @@ document.querySelectorAll(".product-card").forEach(card => {
 });
 
 filterProducts();
+const initiallySelected = Array.from(document.querySelectorAll(".product-card"))
+    .find(card => card.dataset.id === document.getElementById("selected_product_id").value);
+if (initiallySelected) selectProduct(initiallySelected);

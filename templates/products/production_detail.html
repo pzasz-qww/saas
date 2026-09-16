@@ -1,69 +1,96 @@
 {% extends "base.html" %}
 {% load static product_display %}
 
-{% block title %}Produção #{{ production.id }}{% endblock %}
+{% block title %}Produção de {{ production.product.name }}{% endblock %}
 {% block extra_css %}<link rel="stylesheet" href="{% static 'css/production.css' %}">{% endblock %}
 
 {% block content %}
 <main class="production-page">
     <a href="{% url 'products:production_list' %}" class="production-back">← Histórico de produções</a>
     {% if messages %}<div class="messages">{% for message in messages %}<div class="message">{{ message }}</div>{% endfor %}</div>{% endif %}
-    <header class="production-header">
-        <div>
-            <span class="production-eyebrow">Produção #{{ production.id }}</span>
-            <h1>{{ production.product.name }}</h1>
-            <p>{{ production.production_date|date:"d/m/Y" }} · {{ production.get_status_display }}</p>
+
+    {% if production_registered %}
+    <section class="production-success" aria-labelledby="production-success-title">
+        <span>Produção registrada</span>
+        <h2 id="production-success-title">{{ production.produced_quantity|decimal_ptbr }} prontas para venda</h2>
+        <dl>
+            <div><dt>Custo por unidade</dt><dd>{{ production.unit_cost|brl }}</dd></div>
+            <div><dt>Rendimento</dt><dd>{{ production.yield_percentage|decimal_ptbr }}%</dd></div>
+        </dl>
+        <div class="production-success-actions">
+            <a href="{% url 'products:stock_dashboard' %}">Voltar ao estoque</a>
+            <a href="#production-detail">Ver produção</a>
         </div>
-        <div class="production-potential">
-            <span>Custo por unidade</span>
-            <strong>{{ production.unit_cost|brl }}</strong>
-            <small>Total: {{ production.total_cost|brl }}</small>
+    </section>
+    {% endif %}
+
+    <header class="production-header" id="production-detail">
+        <div>
+            <span class="production-eyebrow">{{ production.get_status_display }} · Produção #{{ production.id }}</span>
+            <h1>{{ production.product.name }}</h1>
+            <p>{{ production.production_date|date:"d/m/Y" }}</p>
         </div>
     </header>
 
     <section class="production-card">
-        <div class="yield-preview">
-            <div><span>Planejado</span><strong>{{ production.planned_quantity|decimal_ptbr }}</strong></div>
-            <div><span>Produzido</span><strong>{{ production.produced_quantity|decimal_ptbr }}</strong></div>
+        <div class="production-detail-summary">
+            <div class="production-detail-primary"><span>Quantidade produzida</span><strong>{{ production.produced_quantity|decimal_ptbr }}</strong></div>
             <div><span>Rendimento</span><strong>{{ production.yield_percentage|decimal_ptbr }}%</strong></div>
-            <div><span>Diferença</span><strong>{{ production.yield_difference|decimal_ptbr }}</strong></div>
+            <div><span>Custo por unidade</span><strong>{{ production.unit_cost|brl }}</strong></div>
+            <div><span>Validade</span><strong>{{ production.expiration_date|date:"d/m/Y"|default:"Não informada" }}</strong></div>
         </div>
-        <dl class="production-meta">
-            <div><dt>Responsável</dt><dd>{{ production.created_by|default:"—" }}</dd></div>
-            <div><dt>Validade</dt><dd>{{ production.expiration_date|date:"d/m/Y"|default:"Não informada" }}</dd></div>
-            <div><dt>Lote produzido</dt><dd>{% if output_entry %}#{{ output_entry.id }} · saldo {{ output_entry.remaining_quantity|physical_quantity:output_entry.base_unit }}{% else %}—{% endif %}</dd></div>
-            <div><dt>Observação</dt><dd>{{ production.notes|default:"—" }}</dd></div>
-        </dl>
     </section>
 
     <section class="production-card">
         <h2>Ingredientes consumidos</h2>
+        <div class="component-list">
         {% for consumption in consumptions %}
-        <article class="production-component">
-            <div class="component-title">
-                <h3>{{ consumption.ingredient.name }}</h3>
-                <strong>{{ consumption.total_cost|brl }}</strong>
-            </div>
-            <p>
-                Consumo previsto: {{ consumption.theoretical_quantity|physical_quantity:consumption.base_unit }} ·
-                Consumo real: {{ consumption.actual_quantity|physical_quantity:consumption.base_unit }} ·
-                Perda: {{ consumption.loss_quantity|physical_quantity:consumption.base_unit }}
-            </p>
-            <ul class="allocation-list">
-                {% for movement in consumption.allocations %}
-                <li>Lote #{{ movement.stock_entry_id }} → {{ movement.quantity|physical_quantity:consumption.base_unit }} · {{ movement.cost_value|brl }}</li>
-                {% empty %}<li>Sem alocações rastreáveis.</li>{% endfor %}
-            </ul>
-        </article>
+            <article class="production-component">
+                <div class="component-title"><h3>{{ consumption.ingredient.name }}</h3><strong>{{ consumption.total_cost|brl }}</strong></div>
+                <dl class="ingredient-requirement ingredient-requirement--detail">
+                    <div><dt>Consumo previsto</dt><dd>{{ consumption.theoretical_quantity|physical_quantity:consumption.base_unit }}</dd></div>
+                    <div><dt>Consumo real</dt><dd>{{ consumption.actual_quantity|physical_quantity:consumption.base_unit }}</dd></div>
+                    <div><dt>Perda</dt><dd>{{ consumption.loss_quantity|physical_quantity:consumption.base_unit }}</dd></div>
+                </dl>
+                <details class="production-technical-details">
+                    <summary>Lotes FIFO utilizados</summary>
+                    <ul class="allocation-list">
+                        {% for movement in consumption.allocations %}
+                            <li>Lote #{{ movement.stock_entry_id }} — {{ movement.quantity|physical_quantity:consumption.base_unit }} · {{ movement.cost_value|brl }}</li>
+                        {% empty %}<li>Sem alocações rastreáveis.</li>{% endfor %}
+                    </ul>
+                </details>
+            </article>
         {% endfor %}
+        </div>
     </section>
 
+    <details class="production-card production-technical-details">
+        <summary>Detalhes técnicos</summary>
+        <dl class="production-meta">
+            <div><dt>Planejado</dt><dd>{{ production.planned_quantity|decimal_ptbr }}</dd></div>
+            <div><dt>Diferença</dt><dd>{{ production.yield_difference|decimal_ptbr }}</dd></div>
+            <div><dt>Custo total</dt><dd>{{ production.total_cost|brl }}</dd></div>
+            <div><dt>Responsável</dt><dd>{{ production.created_by|default:"—" }}</dd></div>
+            <div><dt>Lote produzido</dt><dd>{% if output_entry %}Lote #{{ output_entry.id }} · saldo {{ output_entry.remaining_quantity|physical_quantity:output_entry.base_unit }}{% else %}—{% endif %}</dd></div>
+            <div><dt>Observação</dt><dd>{{ production.notes|default:"—" }}</dd></div>
+        </dl>
+    </details>
+
     {% if can_reverse %}
-    <form method="post" action="{% url 'products:production_reverse' production.id %}" class="production-reverse-form">
-        {% csrf_token %}
-        <button type="submit" class="production-danger">Desfazer esta produção</button>
-        <small>A reversão será recusada se o lote produzido já tiver qualquer movimentação.</small>
-    </form>
+        <button type="button" class="production-danger" id="open-reversal-dialog">Desfazer esta produção</button>
+        <dialog class="production-dialog" id="reversal-dialog" aria-labelledby="reversal-title">
+            <h2 id="reversal-title">Desfazer esta produção?</h2>
+            <p>Os ingredientes retornarão aos lotes originais e o lote produzido será cancelado.</p>
+            <p>Esta operação só pode ser realizada enquanto nenhuma unidade desta produção tiver sido consumida.</p>
+            <form method="post" action="{% url 'products:production_reverse' production.id %}" class="production-dialog-actions">
+                {% csrf_token %}
+                <button type="button" class="production-cancel" id="cancel-reversal">Cancelar</button>
+                <button type="submit" class="production-danger">Desfazer produção</button>
+            </form>
+        </dialog>
     {% endif %}
 </main>
 {% endblock %}
+
+{% block extra_js %}<script src="{% static 'js/production_detail.js' %}"></script>{% endblock %}

@@ -120,3 +120,12 @@ function applyFilters() {
 
 buildCategoryButtons();
 applyFilters();
+
+document.querySelectorAll("[data-toggle-details]").forEach(button => {
+    button.addEventListener("click", () => {
+        const details = document.getElementById(button.dataset.toggleDetails);
+        if (!details) return;
+        details.open = true;
+        details.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    });
+});

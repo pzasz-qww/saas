@@ -8,298 +8,145 @@
 {% endblock %}
 
 {% block content %}
-    <div class="stock-dashboard">
-        {% if messages %}
-            <div class="messages">
-                {% for message in messages %}
-                    <div class="message">{{ message }}</div>
-                {% endfor %}
-            </div>
-        {% endif %}
+<main class="stock-dashboard">
+    {% if messages %}
+        <div class="messages">
+            {% for message in messages %}<div class="message">{{ message }}</div>{% endfor %}
+        </div>
+    {% endif %}
 
-        <h1>Central de Estoque</h1>
-        <p class="subtitle">
-            Busque, filtre por categoria e acompanhe custo, lucro e status dos produtos.
-        </p>
+    <header class="stock-page-header">
+        <div>
+            <h1>Central de Estoque</h1>
+            <p class="subtitle">Disponibilidade, produção e ações de cada produto em um só lugar.</p>
+        </div>
+    </header>
 
-        <section class="stock-quick-actions" aria-labelledby="stock-quick-actions-title">
-            <div class="stock-quick-actions-heading">
-                <h2 id="stock-quick-actions-title">Ações rápidas</h2>
-                <p>Acesse as operações disponíveis para o seu perfil.</p>
-            </div>
-
-            <div class="stock-quick-actions-grid">
-                <a
-                    href="{% url 'products:production_list' %}"
-                    class="stock-quick-action"
-                    data-stock-action="productions"
-                >
-                    <strong>Histórico de produções</strong>
-                    <span>Lotes preparados e rendimentos</span>
-                </a>
+    <section class="stock-quick-actions" aria-labelledby="stock-quick-actions-title">
+        <div class="stock-quick-actions-heading">
+            <h2 id="stock-quick-actions-title">Ações rápidas</h2>
+            <p>Operações gerais do estoque.</p>
+        </div>
+        <div class="stock-quick-actions-grid">
+            <a href="{% url 'products:production_list' %}" class="stock-quick-action" data-stock-action="productions">
+                <strong>Histórico de produções</strong><span>Lotes preparados e rendimentos</span>
+            </a>
             {% if can_create_stock_entry %}
-                <a
-                    href="{% url 'products:stock_entry_create' %}"
-                    class="stock-quick-action"
-                    data-stock-action="entry"
-                >
-                    <strong>Registrar entrada</strong>
-                    <span>Compras e reposições</span>
+                <a href="{% url 'products:stock_entry_create' %}" class="stock-quick-action" data-stock-action="entry">
+                    <strong>Registrar entrada</strong><span>Compras e reposições</span>
                 </a>
-
-                <a
-                    href="{% url 'products:product_create' %}"
-                    class="stock-quick-action"
-                    data-stock-action="product"
-                >
-                    <strong>Novo produto</strong>
-                    <span>Cadastrar um item</span>
+                <a href="{% url 'products:product_create' %}" class="stock-quick-action" data-stock-action="product">
+                    <strong>Novo produto</strong><span>Cadastrar um item</span>
                 </a>
             {% endif %}
-
             {% if can_adjust_stock %}
-                <a
-                    href="{% url 'products:stock_count_adjust' %}"
-                    class="stock-quick-action"
-                    data-stock-action="count"
-                >
-                    <strong>Fazer conferência</strong>
-                    <span>Registrar a contagem real</span>
+                <a href="{% url 'products:stock_count_adjust' %}" class="stock-quick-action" data-stock-action="count">
+                    <strong>Fazer conferência</strong><span>Registrar a contagem real</span>
                 </a>
             {% endif %}
-
-            <a
-                href="{% url 'products:shopping_list' %}"
-                class="stock-quick-action"
-                data-stock-action="shopping"
-            >
-                <strong>Lista de compras</strong>
-                <span>Planejar reposições</span>
+            <a href="{% url 'products:shopping_list' %}" class="stock-quick-action" data-stock-action="shopping">
+                <strong>Lista de compras</strong><span>Planejar reposições</span>
             </a>
-
-            <a
-                href="{% url 'products:stock_report_pdf' %}"
-                class="stock-quick-action"
-                data-stock-action="pdf"
-            >
-                <strong>Gerar PDF do estoque</strong>
-                <span>Exportar a visão atual</span>
+            <a href="{% url 'products:stock_report_pdf' %}" class="stock-quick-action" data-stock-action="pdf">
+                <strong>Gerar PDF do estoque</strong><span>Exportar a visão atual</span>
             </a>
-            </div>
-        </section>
-
-        <div class="filters-card">
-            <input
-                type="text"
-                id="stock_search"
-                class="search-input"
-                placeholder="Buscar por produto, categoria, unidade, 600ml, cerveja, batata..."
-                oninput="applyFilters()"
-                autocomplete="off"
-            >
-
-            <div class="filter-group">
-                <div class="filter-title">Categorias</div>
-                <div class="filter-buttons" id="category_buttons">
-                    <button type="button" class="filter-button active" onclick="setCategoryFilter('all', this)">
-                        Todos
-                    </button>
-                </div>
-            </div>
-
-            <div class="filter-group">
-                <div class="filter-title">Status</div>
-                <div class="filter-buttons">
-                    <button type="button" class="filter-button active" onclick="setStatusFilter('all', this)">
-                        Todos
-                    </button>
-
-                    <button type="button" class="filter-button" onclick="setStatusFilter('empty', this)">
-                        Esgotado
-                    </button>
-
-                    <button type="button" class="filter-button danger" onclick="setStatusFilter('critical', this)">
-                        Crítico
-                    </button>
-
-                    <button type="button" class="filter-button" onclick="setStatusFilter('low', this)">
-                        Baixo
-                    </button>
-
-                    <button type="button" class="filter-button" onclick="setStatusFilter('ok', this)">
-                        OK
-                    </button>
-                </div>
-            </div>
-
-            <div class="counter" id="results_counter"></div>
         </div>
+    </section>
 
-        <div class="stock-card">
-            <table class="stock-table">
-                <thead>
-                    <tr>
-                        <th>Produto</th>
-                        <th>Categoria</th>
-                        <th>Estoque</th>
-                        <th>Estoque recomendado</th>
-                        <th>Status</th>
-                        <th>Custo médio</th>
-                        <th>Preço venda</th>
-                        <th>Lucro/un.</th>
-                        <th>Capital em estoque</th>
-                        <th>Lucro potencial</th>
-                    </tr>
-                </thead>
+    <section class="filters-card" aria-label="Filtros do estoque">
+        <label class="sr-only" for="stock_search">Buscar produtos</label>
+        <input type="search" id="stock_search" class="search-input" placeholder="Buscar produto, categoria ou ingrediente" oninput="applyFilters()" autocomplete="off">
+        <div class="filter-group">
+            <div class="filter-title">Categorias</div>
+            <div class="filter-buttons" id="category_buttons">
+                <button type="button" class="filter-button active" onclick="setCategoryFilter('all', this)">Todos</button>
+            </div>
+        </div>
+        <div class="filter-group">
+            <div class="filter-title">Status</div>
+            <div class="filter-buttons">
+                <button type="button" class="filter-button active" onclick="setStatusFilter('all', this)">Todos</button>
+                <button type="button" class="filter-button" onclick="setStatusFilter('empty', this)">Esgotado</button>
+                <button type="button" class="filter-button danger" onclick="setStatusFilter('critical', this)">Crítico</button>
+                <button type="button" class="filter-button" onclick="setStatusFilter('low', this)">Baixo</button>
+                <button type="button" class="filter-button" onclick="setStatusFilter('ok', this)">OK</button>
+            </div>
+        </div>
+        <div class="counter" id="results_counter"></div>
+    </section>
 
-                <tbody id="stock_table_body">
-                    {% for product in products %}
-                        <tr
-                            class="stock-row"
-                            data-product-id="{{ product.id }}"
-                            data-name="{{ product.name|escape }}"
-                            data-category="{{ product.category.name|default:'' }}"
-                            data-status="{{ product.display_stock_status }}"
-                            data-search="{{ product.name|lower }} {{ product.category.name|default:''|lower }} {{ product.stock_base_unit_label|lower }} {{ product.display_stock_status_label|lower }} estoque recomendado {{ product.sale_price }}"
-                        >
-                            <td>
-                                <div class="product-name">{{ product.name }}</div>
-                                <div class="muted">
-                                    Unidade de venda: {{ product.unit }}
-                                </div>
-                                {% if can_create_stock_entry %}
-                                    <a href="{% url 'products:product_edit' product.id %}" class="product-edit-link">
-                                        Editar produto e receita
-                                    </a>
-                                {% endif %}
-                            </td>
+    <section class="stock-product-grid" id="stock_product_grid" aria-label="Produtos em estoque">
+        {% for product in products %}
+        <article
+            class="stock-product-card stock-row stock-product-card--{{ product.display_stock_status }}"
+            data-product-id="{{ product.id }}"
+            data-name="{{ product.name|escape }}"
+            data-category="{{ product.category.name|default:'' }}"
+            data-status="{{ product.display_stock_status }}"
+            data-search="{{ product.name|lower }} {{ product.category.name|default:''|lower }} {{ product.stock_base_unit_label|lower }} {{ product.display_stock_status_label|lower }} {% for component in product.components.all %}{{ component.ingredient.name|lower }} {% endfor %}"
+        >
+            <header class="stock-product-header">
+                <div class="stock-product-heading">
+                    <span class="stock-product-category">{{ product.category.name|default:"Sem categoria" }}</span>
+                    <h2>{{ product.name }}</h2>
+                </div>
+                <span class="stock-status stock-status--{{ product.display_stock_status }}">{{ product.display_stock_status_label }}</span>
+            </header>
 
-                            <td>
-                                <span class="badge">
-                                    {{ product.category.name|default:"Sem categoria" }}
-                                </span>
-                            </td>
+            <div class="stock-operational-summary">
+                {% include "products/includes/stock_quantity_summary.html" %}
+            </div>
 
-                            <td>
-                                {% include "products/includes/stock_quantity_summary.html" %}
-                            </td>
+            <nav class="stock-context-actions" aria-label="Ações de {{ product.name }}">
+                {% if product.inventory_role == "prepared" and product.preparation_mode == "on_demand" %}
+                    {% if can_create_stock_entry %}<a class="stock-action stock-action--primary" href="{% url 'products:product_edit' product.id %}">Editar receita</a>{% endif %}
+                    <button type="button" class="stock-action" data-toggle-details="ingredients-{{ product.id }}">Ingredientes</button>
+                    <button type="button" class="stock-action" data-toggle-details="details-{{ product.id }}">Detalhes</button>
+                {% elif product.inventory_role == "prepared" and product.preparation_mode == "pre_portioned" %}
+                    {% if can_adjust_stock and product.production_potential and product.production_potential.available_quantity > 0 %}<a class="stock-action stock-action--primary" href="{% url 'products:production_create' product.id %}">Preparar</a>{% endif %}
+                    {% if can_create_stock_entry %}<a class="stock-action" href="{% url 'products:product_edit' product.id %}">Editar receita</a>{% endif %}
+                    <a class="stock-action" href="{% url 'products:production_list' %}?produto={{ product.id }}">Histórico</a>
+                    <button type="button" class="stock-action" data-toggle-details="details-{{ product.id }}">Detalhes</button>
+                {% else %}
+                    {% if can_create_stock_entry %}<a class="stock-action stock-action--primary" href="{% url 'products:stock_entry_create' %}?produto={{ product.id }}">Entrada</a>{% endif %}
+                    {% if can_adjust_stock %}<a class="stock-action" href="{% url 'products:stock_count_adjust' %}?produto={{ product.id }}">Conferir</a>{% endif %}
+                    <button type="button" class="stock-action" data-toggle-details="details-{{ product.id }}">Detalhes</button>
+                {% endif %}
+            </nav>
 
-                            <td>
-                                {{ product.minimum_quantity|physical_quantity:product.stock_base_unit }}
-                            </td>
-
-                            <td>
-                                <span class="stock-status stock-status--{{ product.display_stock_status }}">
-                                    {{ product.display_stock_status_label }}
-                                </span>
-                            </td>
-
-                            <td class="money">
-                                {{ product.average_cost|brl }}
-                            </td>
-
-                            <td class="money">
-                                {{ product.sale_price|brl }}
-                            </td>
-
-                            <td class="money">
-                                {{ product.profit_per_unit|brl }}
-                            </td>
-
-                            <td class="money">
-                                {{ product.stock_value|brl }}
-                            </td>
-
-                            <td class="money">
-                                {{ product.potential_profit|brl }}
-                            </td>
-                        </tr>
+            {% if product.inventory_role == "prepared" %}
+            <details class="stock-secondary-details" id="ingredients-{{ product.id }}">
+                <summary>Ingredientes da receita</summary>
+                <ul class="stock-ingredient-list">
+                    {% for component in product.components.all %}
+                        <li><span>{{ component.ingredient.name }}</span><strong>{{ component.quantity|physical_quantity:component.unit }}</strong></li>
                     {% empty %}
-                        <tr>
-                            <td colspan="10">Nenhum produto cadastrado ainda.</td>
-                        </tr>
+                        <li>Receita ainda não configurada.</li>
                     {% endfor %}
-                </tbody>
-            </table>
+                </ul>
+            </details>
+            {% endif %}
 
-            <div class="stock-mobile-list" id="stock_mobile_list">
-                {% for product in products %}
-                    <article
-                        class="stock-mobile-card stock-mobile-card--{{ product.display_stock_status }}"
-                        data-product-id="{{ product.id }}"
-                        data-name="{{ product.name|escape }}"
-                        data-category="{{ product.category.name|default:'' }}"
-                        data-status="{{ product.display_stock_status }}"
-                        data-search="{{ product.name|lower }} {{ product.category.name|default:''|lower }} {{ product.stock_base_unit_label|lower }} {{ product.display_stock_status_label|lower }} estoque recomendado {{ product.sale_price }}"
-                    >
-                        <div class="stock-mobile-card-header">
-                            <div class="stock-mobile-product">
-                                <h2>{{ product.name }}</h2>
-                                <div class="stock-mobile-product-meta">
-                                    <span class="stock-mobile-category">
-                                        {{ product.category.name|default:"Sem categoria" }}
-                                    </span>
-                                    {% if product.unit %}
-                                        <span>Unidade de venda: {{ product.unit }}</span>
-                                    {% endif %}
-                                    {% if can_create_stock_entry %}
-                                        <a href="{% url 'products:product_edit' product.id %}" class="product-edit-link">
-                                            Editar produto e receita
-                                        </a>
-                                    {% endif %}
-                                </div>
-                            </div>
+            <details class="stock-secondary-details" id="details-{{ product.id }}">
+                <summary>Detalhes financeiros e técnicos</summary>
+                <dl class="stock-detail-grid">
+                    <div><dt>Preço de venda</dt><dd>{{ product.sale_price|brl }}</dd></div>
+                    <div><dt>Custo médio</dt><dd>{{ product.average_cost|brl }}</dd></div>
+                    <div><dt>Lucro por unidade</dt><dd>{{ product.profit_per_unit|brl }}</dd></div>
+                    <div><dt>Capital em estoque</dt><dd>{{ product.stock_value|brl }}</dd></div>
+                    <div><dt>Lucro potencial</dt><dd>{{ product.potential_profit|brl }}</dd></div>
+                    <div><dt>Estoque recomendado</dt><dd>{{ product.minimum_quantity|physical_quantity:product.stock_base_unit }}</dd></div>
+                </dl>
+                {% if can_create_stock_entry %}<a href="{% url 'products:product_edit' product.id %}" class="stock-edit-product">Editar produto</a>{% endif %}
+            </details>
+        </article>
+        {% empty %}
+            <div class="stock-empty-state">Nenhum produto cadastrado ainda.</div>
+        {% endfor %}
+    </section>
 
-                            <span class="stock-mobile-status stock-mobile-status--{{ product.display_stock_status }}">
-                                {{ product.display_stock_status_label }}
-                            </span>
-                        </div>
-
-                        <div class="stock-mobile-quantity-block">
-                            {% include "products/includes/stock_quantity_summary.html" %}
-                            {% if product.minimum_quantity %}
-                                <small>
-                                    Estoque recomendado:
-                                    {{ product.minimum_quantity|physical_quantity:product.stock_base_unit }}
-                                </small>
-                            {% endif %}
-                        </div>
-
-                        <div class="stock-mobile-financial-grid">
-                            <div class="stock-mobile-metric stock-mobile-metric--sale">
-                                <span>Preço de venda</span>
-                                <strong>{{ product.sale_price|brl }}</strong>
-                            </div>
-
-                            <div class="stock-mobile-metric">
-                                <span>Custo médio</span>
-                                <strong>{{ product.average_cost|brl }}</strong>
-                            </div>
-
-                            <div class="stock-mobile-metric">
-                                <span>Lucro por unidade</span>
-                                <strong>{{ product.profit_per_unit|brl }}</strong>
-                            </div>
-
-                            <div class="stock-mobile-metric">
-                                <span>Capital em estoque</span>
-                                <strong>{{ product.stock_value|brl }}</strong>
-                            </div>
-
-                            <div class="stock-mobile-metric">
-                                <span>Lucro potencial</span>
-                                <strong>{{ product.potential_profit|brl }}</strong>
-                            </div>
-                        </div>
-                    </article>
-                {% endfor %}
-            </div>
-
-            <div id="no_results" class="no-results">
-                Nenhum produto encontrado com esses filtros.
-            </div>
-        </div>
-    </div>
+    <div id="no_results" class="no-results">Nenhum produto encontrado com esses filtros.</div>
+</main>
 {% endblock %}
 
 {% block extra_js %}

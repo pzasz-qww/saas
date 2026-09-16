@@ -46,9 +46,14 @@
                 autocomplete="off"
             >
 
-            <input type="hidden" name="product" id="selected_product_id">
+            <input type="hidden" name="product" id="selected_product_id" value="{{ selected_product.id|default:'' }}">
 
-            <div id="selected_product_box" class="selected-product"></div>
+            <div id="selected_product_box" class="selected-product"{% if not selected_product %} style="display: none"{% endif %}>
+                {% if selected_product %}
+                    Produto selecionado: {{ selected_product.name }}<br>
+                    <small>{{ selected_product.category.name|default:"Sem categoria" }} · Estoque esperado: {{ selected_product.current_stock|physical_quantity:selected_product.stock_base_unit }}</small>
+                {% endif %}
+            </div>
 
             <div id="no_results" class="no-results">
                 Nenhum produto encontrado.
@@ -58,7 +63,7 @@
                 {% for product in products %}
                     <button
                         type="button"
-                        class="product-card"
+                        class="product-card{% if selected_product.id == product.id %} selected{% endif %}"
                         data-id="{{ product.id }}"
                         data-name="{{ product.name }}"
                         data-category="{{ product.category.name|default:'' }}"
