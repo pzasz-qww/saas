@@ -1,9 +1,12 @@
+from decimal import Decimal
+
 from django.test import TestCase
 from django.urls import reverse
 
 from accounts.models import Profile
+from products.models import ProductComponent
 
-from .helpers import make_company, make_product, make_unit, make_user
+from .helpers import make_company, make_entry, make_product, make_unit, make_user
 
 
 class StockCentralNavigationTests(TestCase):
@@ -143,6 +146,110 @@ class StockCentralNavigationTests(TestCase):
 
         self.assertContains(response, local_product.name)
         self.assertNotContains(response, foreign_product.name)
+
+    def test_product_cards_show_contextual_actions_with_preselection(self):
+        owner = make_user(
+            company=self.company,
+            role="owner",
+            username="dono-acoes-contextuais",
+        )
+        self.client.force_login(owner)
+        direct = make_product(company=self.company, name="Cerveja direta")
+        ingredient = make_product(
+            company=self.company,
+            name="Carne insumo",
+            inventory_role="input",
+            product_type="internal_use",
+            stock_dimension="weight",
+        )
+        make_entry(product=ingredient, quantity="5000")
+        on_demand = make_product(
+            company=self.company,
+            name="Prato na hora",
+            inventory_role="prepared",
+            preparation_mode="on_demand",
+        )
+        pre_portioned = make_product(
+            company=self.company,
+            name="Porção antecipada",
+            inventory_role="prepared",
+            preparation_mode="pre_portioned",
+        )
+        for prepared in (on_demand, pre_portioned):
+            ProductComponent.objects.create(
+                company=self.company,
+                product=prepared,
+                ingredient=ingredient,
+                quantity=Decimal("500"),
+                unit="g",
+            )
+
+        response = self.client.get(reverse("products:stock_dashboard"))
+
+        self.assertContains(
+            response,
+            f'{reverse("products:stock_entry_create")}?produto={direct.pk}',
+        )
+        self.assertContains(
+            response,
+            f'{reverse("products:stock_count_adjust")}?produto={direct.pk}',
+        )
+        self.assertContains(
+            response,
+            reverse("products:product_edit", args=[on_demand.pk]),
+        )
+        self.assertContains(
+            response,
+            reverse("products:production_create", args=[pre_portioned.pk]),
+        )
+        self.assertContains(
+            response,
+            f'{reverse("products:production_list")}?produto={pre_portioned.pk}',
+        )
+
+    def test_contextual_mutation_actions_follow_permissions(self):
+        self.set_stock_permissions(view=True)
+        product = make_product(company=self.company, name="Produto protegido")
+
+        response = self.client.get(reverse("products:stock_dashboard"))
+
+        self.assertNotContains(
+            response,
+            f'{reverse("products:stock_entry_create")}?produto={product.pk}',
+        )
+        self.assertNotContains(
+            response,
+            f'{reverse("products:stock_count_adjust")}?produto={product.pk}',
+        )
+        self.assertContains(response, "Detalhes financeiros e técnicos")
+
+    def test_quick_count_preselection_is_tenant_scoped(self):
+        owner = make_user(
+            company=self.company,
+            role="owner",
+            username="dono-conferencia-rapida",
+        )
+        self.client.force_login(owner)
+        local = make_product(company=self.company, name="Produto para contar")
+        foreign = make_product(
+            company=self.other_company,
+            name="Produto externo para contar",
+        )
+
+        response = self.client.get(
+            f"{reverse('products:stock_count_adjust')}?produto={local.pk}"
+        )
+        foreign_response = self.client.get(
+            f"{reverse('products:stock_count_adjust')}?produto={foreign.pk}"
+        )
+
+        self.assertContains(
+            response,
+            f'id="selected_product_id" value="{local.pk}"',
+            html=False,
+        )
+        self.assertContains(response, "Produto selecionado: Produto para contar")
+        self.assertEqual(foreign_response.status_code, 404)
 
     def test_operational_pages_return_to_central_when_stock_is_visible(self):
         self.set_stock_permissions(view=True, create=True, adjust=True)

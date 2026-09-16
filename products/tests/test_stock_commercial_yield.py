@@ -27,10 +27,9 @@ class StockCommercialYieldTests(TestCase):
         response = self.client.get(reverse("products:stock_dashboard"))
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Estoque físico")
-        self.assertContains(response, "4,5 L")
+        self.assertContains(response, "4,5 L em estoque")
         self.assertContains(response, "Dose: 50 mL")
-        self.assertContains(response, "Rende 90 doses")
+        self.assertContains(response, "90 doses disponíveis")
 
     def test_pre_portioned_own_stock_is_reported_as_ready_for_sale(self):
         product = make_product(
@@ -94,9 +93,8 @@ class StockCommercialYieldTests(TestCase):
         response = self.client.get(reverse("products:stock_dashboard"))
 
         self.assertContains(response, "8 disponíveis")
-        self.assertContains(response, "Limitado por")
+        self.assertContains(response, "Ingrediente limitante")
         self.assertContains(response, "Limão")
-        self.assertContains(response, "Cachaça:")
-        self.assertContains(response, "50 mL por item")
-        self.assertContains(response, "rende 20")
+        self.assertContains(response, "50 mL")
+        self.assertContains(response, "80 g")
         self.assertNotContains(response, "Esgotado por ingrediente")

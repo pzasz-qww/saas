@@ -396,6 +396,27 @@ class StockEntryViewV2Tests(TestCase):
         self.assertContains(response, "Validade (opcional)")
         self.assertContains(response, "Data da entrada")
 
+    def test_quick_entry_preselects_only_a_product_from_the_current_company(self):
+        response = self.client.get(f"{self.url}?produto={self.product.pk}")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(
+            response,
+            f'name="product" value="{self.product.pk}"',
+            html=False,
+        )
+        self.assertContains(response, "Produto selecionado: Carne da tela")
+
+        other_company = make_company(name="Empresa fora da entrada rápida")
+        foreign_product = make_product(
+            company=other_company,
+            name="Produto de outra empresa",
+        )
+        foreign_response = self.client.get(
+            f"{self.url}?produto={foreign_product.pk}"
+        )
+        self.assertEqual(foreign_response.status_code, 404)
+
     def test_stock_surfaces_show_the_normalized_base_unit(self):
         create_stock_entry(
             company=self.company,

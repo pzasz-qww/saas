@@ -394,7 +394,7 @@ class ProductEditingTests(TestCase):
         response = self.client.get(reverse("products:stock_dashboard"))
 
         self.assertContains(response, self.edit_url())
-        self.assertContains(response, "Editar produto e receita")
+        self.assertContains(response, "Editar receita")
 
     def test_removal_preserves_sale_snapshot_and_future_sales_use_new_recipe(self):
         order = Order.objects.create(
