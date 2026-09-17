@@ -101,8 +101,8 @@ class PdvStockValidationTests(OrderTestMixin, TestCase):
         )
 
         self.assertIn(product.name, message)
-        self.assertIn("solicitadas 5", message.lower())
-        self.assertIn("disponíveis 2", message.lower())
+        self.assertIn("Disponível agora: 2", message)
+        self.assertIn("Solicitado: 5 unidades", message)
         self.assert_nothing_was_created_or_moved()
         entry.refresh_from_db()
         self.assertEqual(entry.remaining_quantity, entry.quantity_added)
@@ -144,8 +144,8 @@ class PdvStockValidationTests(OrderTestMixin, TestCase):
         )
 
         self.assertIn(beer.name, message)
-        self.assertIn("solicitadas 5", message.lower())
-        self.assertIn("disponíveis 2", message.lower())
+        self.assertIn("Disponível agora: 2", message)
+        self.assertIn("Solicitado: 5 unidades", message)
         self.assertIn(vodka.name, message)
         self.assertIn("sem estoque", message.lower())
         self.assert_nothing_was_created_or_moved()
@@ -199,8 +199,8 @@ class PdvStockValidationTests(OrderTestMixin, TestCase):
             [{"id": product.pk, "quantity": 2}]
         )
 
-        self.assertIn("solicitadas 2 doses", message.lower())
-        self.assertIn("disponíveis 1", message.lower())
+        self.assertIn("Disponível agora: 1", message)
+        self.assertIn("Solicitado: 2 doses", message)
         self.assert_nothing_was_created_or_moved()
         entry.refresh_from_db()
         self.assertEqual(entry.remaining_quantity, Decimal("99"))
@@ -278,8 +278,8 @@ class PdvStockValidationTests(OrderTestMixin, TestCase):
         )
 
         self.assertIn(product.name, message)
-        self.assertIn("solicitadas 5", message.lower())
-        self.assertIn("disponíveis 4", message.lower())
+        self.assertIn("Disponível agora: 4", message)
+        self.assertIn("Solicitado: 5 unidades", message)
         self.assert_nothing_was_created_or_moved()
         entry.refresh_from_db()
         self.assertEqual(entry.remaining_quantity, entry.quantity_added)

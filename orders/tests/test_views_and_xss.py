@@ -39,7 +39,9 @@ class OrderWorkflowViewTests(OrderTestMixin, TestCase):
         )
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Estoque insuficiente")
+        self.assertContains(response, "A quantidade disponível")
+        self.assertContains(response, "Disponível agora: 4")
+        self.assertContains(response, "Solicitado: 5 unidades")
         order.refresh_from_db()
         entry.refresh_from_db()
         self.assertEqual(order.status, "pre_sale")
