@@ -311,8 +311,11 @@ class StockEntryViewV2Tests(TestCase):
 
     def test_interface_creates_normalized_lot_and_records_user(self):
         response = self.client.post(self.url, self.valid_post())
-        self.assertRedirects(response, reverse("products:stock_dashboard"))
         entry = StockEntry.objects.get()
+        self.assertRedirects(
+            response,
+            f"{self.url}?produto={self.product.pk}&entrada={entry.pk}",
+        )
         self.assertEqual(entry.input_quantity, Decimal("30"))
         self.assertEqual(entry.input_unit, "kg")
         self.assertEqual(entry.quantity_added, Decimal("30000"))
@@ -339,7 +342,7 @@ class StockEntryViewV2Tests(TestCase):
         self.assertEqual(defaulted.status_code, 302)
         self.assertEqual(StockEntry.objects.get().entry_date, local_today)
 
-    def test_success_message_preserves_input_unit_and_formats_total_cost(self):
+    def test_success_feedback_preserves_unit_cost_stock_and_repeat_actions(self):
         response = self.client.post(
             self.url,
             self.valid_post(
@@ -350,11 +353,16 @@ class StockEntryViewV2Tests(TestCase):
             follow=True,
         )
 
+        self.assertContains(response, "Entrada registrada")
         self.assertContains(
             response,
-            "Entrada criada: Carne da tela recebeu 5 kg. "
-            "Custo total: R$ 140,00.",
+            "<p><strong>Carne da tela</strong> recebeu 5 kg.</p>",
+            html=True,
         )
+        self.assertContains(response, "Custo total: R$ 140,00.")
+        self.assertContains(response, "Estoque atual: 5 kg.")
+        self.assertContains(response, "Registrar outra entrada de Carne da tela")
+        self.assertContains(response, "Voltar ao estoque")
 
     def test_invalid_post_preserves_values_and_shows_specific_errors(self):
         response = self.client.post(
@@ -422,6 +430,180 @@ class StockEntryViewV2Tests(TestCase):
             f'value="{timezone.localdate().isoformat()}"',
             html=False,
         )
+        self.assertContains(response, "Mais op&ccedil;&otilde;es", html=False)
+        self.assertContains(response, "Resumo da entrada")
+        self.assertContains(response, "Informe quando o lote possuir validade.")
+
+    def test_products_without_history_receive_friendly_dimension_fallbacks(self):
+        count_product = make_product(
+            company=self.company,
+            name="Copos sem histórico",
+            stock_dimension="count",
+        )
+        volume_product = make_product(
+            company=self.company,
+            name="Vodka sem histórico",
+            stock_dimension="volume",
+        )
+
+        response = self.client.get(f"{self.url}?produto={self.product.pk}")
+
+        self.assertEqual(response.context["form"]["input_unit"].value(), "kg")
+        self.assertContains(
+            response,
+            f'data-id="{count_product.pk}"',
+            html=False,
+        )
+        self.assertContains(response, 'data-preferred-unit="unit"', html=False)
+        self.assertContains(
+            response,
+            f'data-id="{volume_product.pk}"',
+            html=False,
+        )
+        self.assertContains(response, 'data-preferred-unit="L"', html=False)
+        self.assertContains(response, "Sem histórico")
+
+    def test_last_valid_unit_is_suggested_for_weight_and_volume(self):
+        grams_product = make_product(
+            company=self.company,
+            name="Tempero em gramas",
+            stock_dimension="weight",
+        )
+        volume_product = make_product(
+            company=self.company,
+            name="Vodka em litros",
+            stock_dimension="volume",
+        )
+        for product, quantity, unit in (
+            (self.product, "2", "kg"),
+            (grams_product, "500", "g"),
+            (volume_product, "1", "L"),
+        ):
+            create_stock_entry(
+                company=self.company,
+                product=product,
+                input_quantity=quantity,
+                input_unit=unit,
+                price_mode="total",
+                price="10",
+                created_by=self.owner,
+            )
+
+        cases = (
+            (self.product, "kg"),
+            (grams_product, "g"),
+            (volume_product, "L"),
+        )
+        for product, expected_unit in cases:
+            with self.subTest(product=product.name):
+                response = self.client.get(f"{self.url}?produto={product.pk}")
+                self.assertEqual(
+                    response.context["form"]["input_unit"].value(),
+                    expected_unit,
+                )
+                self.assertContains(
+                    response,
+                    f'data-preferred-unit="{expected_unit}"',
+                    html=False,
+                )
+
+    def test_invalid_historical_unit_falls_back_to_friendly_unit(self):
+        entry = create_stock_entry(
+            company=self.company,
+            product=self.product,
+            input_quantity="500",
+            input_unit="g",
+            price_mode="total",
+            price="10",
+            created_by=self.owner,
+        )
+        StockEntry.objects.filter(pk=entry.pk).update(input_unit="L")
+
+        response = self.client.get(f"{self.url}?produto={self.product.pk}")
+
+        self.assertEqual(response.context["form"]["input_unit"].value(), "kg")
+        self.assertEqual(response.context["selected_product"].entry_last_unit, "Sem histórico")
+
+    def test_unit_history_is_isolated_by_company_and_product(self):
+        create_stock_entry(
+            company=self.company,
+            product=self.product,
+            input_quantity="500",
+            input_unit="g",
+            price_mode="total",
+            price="10",
+            created_by=self.owner,
+        )
+        other_company = make_company(name="Empresa com preferência própria")
+        foreign_product = make_product(
+            company=other_company,
+            name=self.product.name,
+            stock_dimension="weight",
+        )
+        create_stock_entry(
+            company=other_company,
+            product=foreign_product,
+            input_quantity="2",
+            input_unit="kg",
+            price_mode="total",
+            price="20",
+        )
+
+        response = self.client.get(f"{self.url}?produto={self.product.pk}")
+
+        self.assertEqual(response.context["form"]["input_unit"].value(), "g")
+        self.assertNotContains(response, f'data-id="{foreign_product.pk}"', html=False)
+
+    def test_prepared_products_do_not_accept_manual_stock_entry(self):
+        on_demand = make_product(
+            company=self.company,
+            name="Drink sob demanda",
+            inventory_role="prepared",
+            preparation_mode="on_demand",
+        )
+        pre_portioned = make_product(
+            company=self.company,
+            name="Porção produzida",
+            inventory_role="prepared",
+            preparation_mode="pre_portioned",
+        )
+
+        response = self.client.get(self.url)
+
+        self.assertNotContains(response, on_demand.name)
+        self.assertNotContains(response, pre_portioned.name)
+        self.assertEqual(
+            self.client.get(f"{self.url}?produto={on_demand.pk}").status_code,
+            404,
+        )
+        self.assertEqual(
+            self.client.get(f"{self.url}?produto={pre_portioned.pk}").status_code,
+            404,
+        )
+
+    def test_preselected_product_collapses_picker_and_shows_operational_summary(self):
+        create_stock_entry(
+            company=self.company,
+            product=self.product,
+            input_quantity="2",
+            input_unit="kg",
+            price_mode="total",
+            price="50",
+            created_by=self.owner,
+        )
+
+        response = self.client.get(f"{self.url}?produto={self.product.pk}")
+
+        self.assertContains(response, 'class="product-picker is-collapsed"', html=False)
+        self.assertContains(response, "Trocar produto")
+        self.assertContains(response, "Estoque atual")
+        self.assertContains(response, "2 kg")
+        self.assertContains(response, "&Uacute;ltima unidade usada", html=False)
+
+    def test_unknown_preselected_product_returns_404(self):
+        response = self.client.get(f"{self.url}?produto=999999")
+
+        self.assertEqual(response.status_code, 404)
 
     def test_quick_entry_preselects_only_a_product_from_the_current_company(self):
         response = self.client.get(f"{self.url}?produto={self.product.pk}")
@@ -432,7 +614,12 @@ class StockEntryViewV2Tests(TestCase):
             f'name="product" value="{self.product.pk}"',
             html=False,
         )
-        self.assertContains(response, "Produto selecionado: Carne da tela")
+        self.assertContains(response, "Produto escolhido")
+        self.assertContains(
+            response,
+            '<h2 id="selected_product_name">Carne da tela</h2>',
+            html=True,
+        )
 
         other_company = make_company(name="Empresa fora da entrada rápida")
         foreign_product = make_product(
