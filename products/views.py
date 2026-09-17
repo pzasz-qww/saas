@@ -13,7 +13,9 @@ from django.db.models import (
     DecimalField,
     ExpressionWrapper,
     F,
+    OuterRef,
     Q,
+    Subquery,
     Sum,
     Value,
     When,
@@ -58,6 +60,7 @@ from .production_services import (
     create_production,
     reverse_production,
 )
+from .quantities import QUANTITY_UNIT_CHOICES, units_for_dimension
 from .recipe_services import (
     RecipeServiceError,
     expand_product_components,
@@ -98,7 +101,88 @@ def _query_selected_product(products, raw_product_id):
         product_id = int(raw_product_id)
     except (TypeError, ValueError):
         raise Http404("Produto inválido.") from None
-    return get_object_or_404(products, pk=product_id)
+    selected_product = next(
+        (product for product in products if product.pk == product_id),
+        None,
+    )
+    if selected_product is None:
+        raise Http404("Produto não encontrado.")
+    return selected_product
+
+
+_FRIENDLY_ENTRY_UNIT_BY_DIMENSION = {
+    "count": "unit",
+    "weight": "kg",
+    "volume": "L",
+}
+
+
+def _stock_entry_products(company):
+    current_stock_field = DecimalField(max_digits=20, decimal_places=6)
+    last_valid_entry = (
+        StockEntry.objects.filter(
+            company=company,
+            product_id=OuterRef("pk"),
+            production__isnull=True,
+        )
+        .filter(
+            Q(product__stock_dimension="count", input_unit="unit")
+            | Q(product__stock_dimension="weight", input_unit__in=("mg", "g", "kg"))
+            | Q(product__stock_dimension="volume", input_unit__in=("mL", "L"))
+        )
+        .order_by("-created_at", "-id")
+    )
+    products = (
+        Product.objects.filter(
+            company=company,
+            active=True,
+            inventory_role__in=("direct", "input"),
+        )
+        .select_related("category", "unit")
+        .annotate(
+            annotated_current_stock=Coalesce(
+                Sum(
+                    "stock_entries__remaining_quantity",
+                    filter=Q(stock_entries__company=company),
+                ),
+                Value(Decimal("0.00")),
+                output_field=current_stock_field,
+            ),
+            entry_last_unit_value=Subquery(
+                last_valid_entry.values("input_unit")[:1]
+            ),
+            entry_last_date_value=Subquery(
+                last_valid_entry.values("entry_date")[:1]
+            ),
+        )
+        .order_by("category__name", "name")
+    )
+
+    unit_labels = dict(QUANTITY_UNIT_CHOICES)
+    for product in products:
+        allowed_units = units_for_dimension(product.stock_dimension)
+        last_unit = product.entry_last_unit_value
+        preferred_unit = (
+            last_unit
+            if last_unit is not None
+            else _FRIENDLY_ENTRY_UNIT_BY_DIMENSION.get(product.stock_dimension)
+        )
+        if preferred_unit not in allowed_units:
+            preferred_unit = allowed_units[0] if allowed_units else ""
+
+        product.entry_preferred_unit = preferred_unit
+        product.entry_last_unit = (
+            unit_labels.get(last_unit, last_unit)
+            if last_unit is not None
+            else "Sem histórico"
+        )
+        product.entry_last_date = product.entry_last_date_value
+        product.entry_current_stock = format_quantity(
+            product.current_stock,
+            product.stock_base_unit,
+        )
+
+    return products
 
 
 def _get_stock_products_queryset(company):
@@ -1068,11 +1152,7 @@ def stock_entry_create(request):
         return redirect("products:stock_dashboard")
 
     company = request.current_company
-    products = (
-        Product.objects.filter(company=company, active=True)
-        .select_related("category", "unit")
-        .order_by("category__name", "name")
-    )
+    products = _stock_entry_products(company)
 
     submitted_product_id = request.POST.get("product") if request.method == "POST" else None
     selected_product = None
@@ -1093,7 +1173,10 @@ def stock_entry_create(request):
         request.POST if request.method == "POST" else None,
         company=company,
         initial=(
-            {"product": selected_product.pk}
+            {
+                "product": selected_product.pk,
+                "input_unit": selected_product.entry_preferred_unit,
+            }
             if selected_product is not None and request.method == "GET"
             else None
         ),
@@ -1117,15 +1200,38 @@ def stock_entry_create(request):
             target_field = error.field if error.field in form.fields else None
             form.add_error(target_field, str(error))
         else:
-            messages.success(
-                request,
-                (
-                    f"Entrada criada: {entry.product.name} recebeu "
-                    f"{format_quantity(entry.input_quantity, entry.input_unit)}. "
-                    f"Custo total: {format_money(entry.total_cost)}."
-                ),
+            query = urlencode(
+                {
+                    "produto": entry.product_id,
+                    "entrada": entry.pk,
+                }
             )
-            return redirect("products:stock_dashboard")
+            return redirect(f"{reverse('products:stock_entry_create')}?{query}")
+
+    success_entry = None
+    if request.method == "GET" and request.GET.get("entrada") not in (None, ""):
+        try:
+            success_entry_id = int(request.GET["entrada"])
+        except (TypeError, ValueError):
+            raise Http404("Entrada inválida.") from None
+        success_entry = get_object_or_404(
+            StockEntry.objects.select_related("product").filter(
+                company=company,
+                product__company=company,
+                product__active=True,
+                product__inventory_role__in=("direct", "input"),
+                production__isnull=True,
+            ),
+            pk=success_entry_id,
+        )
+        if selected_product is None or success_entry.product_id != selected_product.pk:
+            raise Http404("Entrada inválida.")
+        success_entry.display_quantity = format_quantity(
+            success_entry.input_quantity,
+            success_entry.input_unit,
+        )
+        success_entry.display_total_cost = format_money(success_entry.total_cost)
+        success_entry.current_stock_display = selected_product.entry_current_stock
 
     return render(
         request,
@@ -1134,6 +1240,16 @@ def stock_entry_create(request):
             "form": form,
             "products": products,
             "selected_product": selected_product,
+            "success_entry": success_entry,
+            "advanced_options_open": (
+                request.method == "POST"
+                and (
+                    request.POST.get("price_mode") == "per_unit"
+                    or bool(form.errors.get("price_mode"))
+                    or bool(form.errors.get("entry_date"))
+                    or bool(form.errors.get("notes"))
+                )
+            ),
         },
     )
 

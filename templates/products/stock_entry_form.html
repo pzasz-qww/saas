@@ -27,10 +27,35 @@
 
         <h1>Nova entrada de estoque</h1>
         <p class="subtitle">
-            Registre a quantidade comprada, o custo e os dados do lote.
+            Registre a quantidade comprada, o valor e os dados do lote.
         </p>
 
-        <form method="post" id="stock_entry_form" novalidate>
+        {% if success_entry %}
+            <section class="entry-success" aria-labelledby="entry_success_title">
+                <h2 id="entry_success_title">Entrada registrada</h2>
+                <p>
+                    <strong>{{ success_entry.product.name }}</strong> recebeu
+                    {{ success_entry.display_quantity }}.
+                </p>
+                <p>Custo total: {{ success_entry.display_total_cost }}.</p>
+                <p>Estoque atual: {{ success_entry.current_stock_display }}.</p>
+                <div class="entry-success-actions">
+                    <a href="{% url 'products:stock_entry_create' %}?produto={{ success_entry.product_id }}">
+                        Registrar outra entrada de {{ success_entry.product.name }}
+                    </a>
+                    <a href="{% url 'products:stock_dashboard' %}" class="secondary-action">
+                        Voltar ao estoque
+                    </a>
+                </div>
+            </section>
+        {% endif %}
+
+        <form
+            method="post"
+            id="stock_entry_form"
+            novalidate
+            data-form-bound="{% if form.is_bound %}true{% else %}false{% endif %}"
+        >
             {% csrf_token %}
             {{ form.product }}
 
@@ -40,125 +65,165 @@
                 </div>
             {% endif %}
 
-            <label for="product_search">Produto</label>
-            <input
-                type="text"
-                id="product_search"
-                class="search-input"
-                placeholder="Busque por nome, categoria ou unidade"
-                autocomplete="off"
+            <section
+                id="product_picker"
+                class="product-picker{% if selected_product %} is-collapsed{% endif %}"
+                aria-labelledby="product_picker_title"
             >
+                <h2 id="product_picker_title">Escolha o produto</h2>
+                <label for="product_search">Produto</label>
+                <input
+                    type="search"
+                    id="product_search"
+                    class="search-input"
+                    placeholder="Busque por nome, categoria ou unidade"
+                    autocomplete="off"
+                >
+
+                <div id="no_results" class="no-results">
+                    Nenhum produto encontrado.
+                </div>
+
+                <div class="product-results" id="product_results">
+                    {% for product in products %}
+                        <button
+                            type="button"
+                            class="product-card{% if selected_product.id == product.id %} selected{% endif %}"
+                            data-id="{{ product.id }}"
+                            data-name="{{ product.name }}"
+                            data-category="{{ product.category.name|default:'' }}"
+                            data-dimension="{{ product.stock_dimension }}"
+                            data-dimension-label="{{ product.get_stock_dimension_display }}"
+                            data-preferred-unit="{{ product.entry_preferred_unit }}"
+                            data-current-stock="{{ product.entry_current_stock }}"
+                            data-last-unit="{{ product.entry_last_unit }}"
+                            data-last-entry-date="{{ product.entry_last_date|date:'d/m/Y' }}"
+                            data-search="{{ product.name|lower }} {{ product.category.name|default:''|lower }} {{ product.get_stock_dimension_display|lower }} {{ product.unit|lower }}"
+                        >
+                            <span class="product-name">{{ product.name }}</span>
+                            <span class="product-meta">
+                                {{ product.category.name|default:"Sem categoria" }}<br>
+                                Estoque controlado em: {{ product.get_stock_dimension_display }}
+                            </span>
+                        </button>
+                    {% empty %}
+                        <p>Nenhum produto ativo aceita entrada manual.</p>
+                    {% endfor %}
+                </div>
+            </section>
+
             {% for error in form.product.errors %}
                 <p class="field-error" role="alert">&#9888; {{ error }}</p>
             {% endfor %}
 
-            <div
+            <section
                 id="selected_product_box"
                 class="selected-product{% if selected_product %} is-visible{% endif %}"
+                aria-live="polite"
             >
-                {% if selected_product %}
-                    Produto selecionado: {{ selected_product.name }}<br>
-                    <small>
-                        {{ selected_product.category.name|default:"Sem categoria" }}
-                        &middot; {{ selected_product.get_stock_dimension_display }}
-                    </small>
-                {% endif %}
-            </div>
-
-            <div id="no_results" class="no-results">
-                Nenhum produto encontrado.
-            </div>
-
-            <div class="product-results" id="product_results">
-                {% for product in products %}
-                    <button
-                        type="button"
-                        class="product-card{% if selected_product.id == product.id %} selected{% endif %}"
-                        data-id="{{ product.id }}"
-                        data-name="{{ product.name }}"
-                        data-category="{{ product.category.name|default:'' }}"
-                        data-dimension="{{ product.stock_dimension }}"
-                        data-dimension-label="{{ product.get_stock_dimension_display }}"
-                        data-price="{{ product.sale_price|floatformat:2 }}"
-                        data-search="{{ product.name|lower }} {{ product.category.name|default:''|lower }} {{ product.get_stock_dimension_display|lower }} {{ product.unit|lower }}"
-                    >
-                        <span class="product-name">{{ product.name }}</span>
-                        <span class="product-meta">
-                            {{ product.category.name|default:"Sem categoria" }}<br>
-                            Estoque controlado em: {{ product.get_stock_dimension_display }}
-                        </span>
-                    </button>
-                {% empty %}
-                    <p>Nenhum produto ativo cadastrado.</p>
-                {% endfor %}
-            </div>
-
-            <div class="quantity-row">
-                <div class="field-group">
-                    <label for="{{ form.input_quantity.id_for_label }}">Quantidade</label>
-                    {{ form.input_quantity }}
-                    {% for error in form.input_quantity.errors %}
-                        <p class="field-error" role="alert">&#9888; {{ error }}</p>
-                    {% endfor %}
+                <div class="selected-product-heading">
+                    <div>
+                        <span class="selected-product-kicker">Produto escolhido</span>
+                        <h2 id="selected_product_name">{{ selected_product.name|default:"" }}</h2>
+                    </div>
+                    <button type="button" id="change_product_button">Trocar produto</button>
                 </div>
-                <div class="field-group unit-field">
-                    <label for="{{ form.input_unit.id_for_label }}">Unidade</label>
-                    {{ form.input_unit }}
-                    {% for error in form.input_unit.errors %}
-                        <p class="field-error" role="alert">&#9888; {{ error }}</p>
-                    {% endfor %}
-                </div>
-            </div>
+                <dl class="selected-product-details">
+                    <div>
+                        <dt>Estoque atual</dt>
+                        <dd id="selected_product_stock">{{ selected_product.entry_current_stock|default:"" }}</dd>
+                    </div>
+                    <div>
+                        <dt>&Uacute;ltima unidade usada</dt>
+                        <dd id="selected_product_last_unit">{{ selected_product.entry_last_unit|default:"" }}</dd>
+                    </div>
+                    <div id="selected_product_last_date_wrap"{% if not selected_product.entry_last_date %} hidden{% endif %}>
+                        <dt>&Uacute;ltima entrada</dt>
+                        <dd id="selected_product_last_date">{{ selected_product.entry_last_date|date:"d/m/Y" }}</dd>
+                    </div>
+                </dl>
+            </section>
 
-            <fieldset class="price-mode-box">
-                <legend>Como quer informar o pre&ccedil;o?</legend>
-                {% for radio in form.price_mode %}
-                    <label class="mode-option" for="{{ radio.id_for_label }}">
-                        {{ radio.tag }} {{ radio.choice_label }}
-                    </label>
-                {% endfor %}
-                {% for error in form.price_mode.errors %}
+            <div id="entry_fields" class="entry-fields{% if selected_product %} is-ready{% endif %}">
+                <div class="quantity-row">
+                    <div class="field-group">
+                        <label for="{{ form.input_quantity.id_for_label }}">Quantidade</label>
+                        {{ form.input_quantity }}
+                        {% for error in form.input_quantity.errors %}
+                            <p class="field-error" role="alert">&#9888; {{ error }}</p>
+                        {% endfor %}
+                    </div>
+                    <div class="field-group unit-field">
+                        <label for="{{ form.input_unit.id_for_label }}">Unidade</label>
+                        {{ form.input_unit }}
+                        {% for error in form.input_unit.errors %}
+                            <p class="field-error" role="alert">&#9888; {{ error }}</p>
+                        {% endfor %}
+                    </div>
+                </div>
+
+                <label for="{{ form.price.id_for_label }}" id="price_label">Valor total</label>
+                <div class="price-input-wrap">
+                    <span>R$</span>
+                    {{ form.price }}
+                    <span id="price_unit_suffix"></span>
+                </div>
+                {% for error in form.price.errors %}
                     <p class="field-error" role="alert">&#9888; {{ error }}</p>
                 {% endfor %}
-            </fieldset>
 
-            <label for="{{ form.price.id_for_label }}" id="price_label">Pre&ccedil;o</label>
-            <div class="price-input-wrap">
-                <span>R$</span>
-                {{ form.price }}
-                <span id="price_unit_suffix"></span>
-            </div>
-            {% for error in form.price.errors %}
-                <p class="field-error" role="alert">&#9888; {{ error }}</p>
-            {% endfor %}
+                <div id="calculation_preview" class="calculation-preview" aria-live="polite"></div>
 
-            <div id="calculation_preview" class="calculation-preview" aria-live="polite"></div>
-
-            <div class="date-row">
-                <div class="field-group">
-                    <label for="{{ form.entry_date.id_for_label }}">Data da entrada</label>
-                    {{ form.entry_date }}
-                    <small class="date-default-hint">Hoje</small>
-                    {% for error in form.entry_date.errors %}
-                        <p class="field-error" role="alert">&#9888; {{ error }}</p>
-                    {% endfor %}
-                </div>
-                <div class="field-group">
+                <div class="expiration-field">
                     <label for="{{ form.expiration_date.id_for_label }}">Validade (opcional)</label>
                     {{ form.expiration_date }}
+                    <small>Informe quando o lote possuir validade.</small>
                     {% for error in form.expiration_date.errors %}
                         <p class="field-error" role="alert">&#9888; {{ error }}</p>
                     {% endfor %}
                 </div>
+
+                <details class="more-options" id="more_options"{% if advanced_options_open %} open{% endif %}>
+                    <summary>Mais op&ccedil;&otilde;es</summary>
+                    <div class="more-options-content">
+                        <fieldset class="price-mode-box">
+                            <legend>Forma de informar o valor</legend>
+                            {% for radio in form.price_mode %}
+                                <label class="mode-option" for="{{ radio.id_for_label }}">
+                                    {{ radio.tag }} {{ radio.choice_label }}
+                                </label>
+                            {% endfor %}
+                            {% for error in form.price_mode.errors %}
+                                <p class="field-error" role="alert">&#9888; {{ error }}</p>
+                            {% endfor %}
+                        </fieldset>
+
+                        <div class="field-group">
+                            <label for="{{ form.entry_date.id_for_label }}">Data da entrada</label>
+                            {{ form.entry_date }}
+                            <small class="date-default-hint">Hoje</small>
+                            {% for error in form.entry_date.errors %}
+                                <p class="field-error" role="alert">&#9888; {{ error }}</p>
+                            {% endfor %}
+                        </div>
+
+                        <label for="{{ form.notes.id_for_label }}">Observa&ccedil;&atilde;o (opcional)</label>
+                        {{ form.notes }}
+                        {% for error in form.notes.errors %}
+                            <p class="field-error" role="alert">&#9888; {{ error }}</p>
+                        {% endfor %}
+                    </div>
+                </details>
+
+                <section id="entry_confirmation" class="entry-confirmation" aria-live="polite">
+                    <strong>Resumo da entrada</strong>
+                    <p id="confirmation_quantity">Escolha o produto e informe a quantidade.</p>
+                    <p id="confirmation_price"></p>
+                    <p id="confirmation_expiration"></p>
+                </section>
+
+                <button type="submit" id="submit_button">Registrar entrada</button>
             </div>
-
-            <label for="{{ form.notes.id_for_label }}">Observa&ccedil;&atilde;o (opcional)</label>
-            {{ form.notes }}
-            {% for error in form.notes.errors %}
-                <p class="field-error" role="alert">&#9888; {{ error }}</p>
-            {% endfor %}
-
-            <button type="submit" id="submit_button">Registrar entrada</button>
         </form>
     </div>
 {% endblock %}

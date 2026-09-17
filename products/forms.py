@@ -298,6 +298,7 @@ class StockEntryForm(forms.Form):
         self.fields["product"].queryset = Product.objects.filter(
             company=company,
             active=True,
+            inventory_role__in=("direct", "input"),
         ).order_by("name", "id")
         self.fields["entry_date"].initial = timezone.localdate
         self.fields["input_quantity"].widget.attrs.update(
