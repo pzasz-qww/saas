@@ -138,6 +138,7 @@
                 <div class="field-group">
                     <label for="{{ form.entry_date.id_for_label }}">Data da entrada</label>
                     {{ form.entry_date }}
+                    <small class="date-default-hint">Hoje</small>
                     {% for error in form.entry_date.errors %}
                         <p class="field-error" role="alert">&#9888; {{ error }}</p>
                     {% endfor %}

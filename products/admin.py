@@ -15,6 +15,7 @@ from .models import (
     StockMovement,
     Unit,
 )
+from .presentation import format_percentage
 
 
 class CompanyScopedAdminMixin:
@@ -785,7 +786,7 @@ class ProductionAdmin(CompanyScopedAdminMixin, admin.ModelAdmin):
     )
 
     def show_yield(self, obj):
-        return f"{obj.yield_percentage:.2f}%" if obj else "-"
+        return format_percentage(obj.yield_percentage) if obj else "-"
 
     show_yield.short_description = "Rendimento"
 

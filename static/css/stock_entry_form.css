@@ -76,6 +76,7 @@
 .quantity-row, .date-row { display: grid; grid-template-columns: 2fr 1fr; gap: 12px; }
 .date-row { grid-template-columns: 1fr 1fr; margin-top: 18px; }
 .field-group { min-width: 0; }
+.date-default-hint { display: block; color: #6b7280; font-size: 12px; }
 
 .price-mode-box {
     border: 0;

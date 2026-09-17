@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% load static product_display %}
 
-{% block title %}{% if editing %}Editar {{ product.name }}{% else %}Novo produto{% endif %}{% endblock %}
+{% block title %}{% if editing %}Editar {{ product.name }}{% elif creating_input %}Novo insumo{% else %}Novo produto{% endif %}{% endblock %}
 
 {% block extra_css %}
     <link rel="stylesheet" href="{% static 'css/product_form.css' %}">
@@ -17,7 +17,11 @@
     {% endif %}
 
     <div class="product-form-card">
-        {% if menu_permissions.can_view_stock %}
+        {% if creating_input and recipe_return_to %}
+            <nav class="module-return" aria-label="Navegação da receita">
+                <a href="{{ recipe_return_to }}" class="module-back-link">Voltar para a receita</a>
+            </nav>
+        {% elif menu_permissions.can_view_stock %}
             <nav class="module-return" aria-label="Navegação do estoque">
                 <a href="{% url 'products:stock_dashboard' %}" class="module-back-link">
                     Voltar para o estoque
@@ -25,10 +29,12 @@
             </nav>
         {% endif %}
 
-        <h1>{% if editing %}Editar produto{% else %}Novo produto{% endif %}</h1>
+        <h1>{% if editing %}Editar produto{% elif creating_input %}Novo insumo{% else %}Novo produto{% endif %}</h1>
         <p class="subtitle">
             {% if editing %}
                 Atualize os dados comerciais e os ingredientes usados daqui para frente.
+            {% elif creating_input %}
+                Cadastre um ingrediente para usar na receita. Ele ficará disponível assim que for salvo.
             {% else %}
                 Nome, preço e forma de venda são suficientes para o cadastro rápido.
             {% endif %}
@@ -116,6 +122,8 @@
 
         <form method="post" id="product-form">
             {% csrf_token %}
+            {% if creating_input %}<input type="hidden" name="creation_mode" value="input">{% endif %}
+            {% if recipe_return_to %}<input type="hidden" name="return_to" value="{{ recipe_return_to }}">{% endif %}
 
             <section class="form-section primary-fields" aria-labelledby="basic-data-title">
                 <h2 id="basic-data-title">Dados principais</h2>
@@ -160,9 +168,12 @@
                         <h2 id="components-title">Receita</h2>
                         <p>Tudo que estiver nesta receita será considerado nas novas operações.</p>
                     </div>
-                    <button type="button" class="secondary-button" id="add-component">
-                        + Adicionar ingrediente
-                    </button>
+                    <div class="components-heading-actions">
+                        <button type="button" class="secondary-button" id="add-component">
+                            + Adicionar ingrediente
+                        </button>
+                        {% if new_input_url %}<a href="{{ new_input_url }}" class="new-input-link">+ Novo insumo</a>{% endif %}
+                    </div>
                 </div>
 
                 {{ component_formset.management_form }}
@@ -310,7 +321,7 @@
                 </div>
             </details>
 
-            <button type="submit">{% if editing %}Salvar alterações{% else %}Salvar produto{% endif %}</button>
+            <button type="submit">{% if editing %}Salvar alterações{% elif creating_input %}Salvar insumo{% else %}Salvar produto{% endif %}</button>
         </form>
 
         <dialog id="remove-component-dialog" class="confirmation-dialog" aria-labelledby="remove-dialog-title">

@@ -24,7 +24,7 @@
                     <td>{{ production.product.name }}</td>
                     <td>{{ production.production_date|date:"d/m/Y" }}</td>
                     <td>{{ production.produced_quantity|decimal_ptbr }}</td>
-                    <td>{{ production.yield_percentage|decimal_ptbr }}%</td>
+                    <td>{{ production.yield_percentage|percentage_ptbr }}</td>
                     <td>{{ production.unit_cost|brl }}</td>
                     <td>{{ production.get_status_display }}</td>
                     <td><a href="{% url 'products:production_detail' production.id %}">Ver detalhes</a></td>
@@ -41,7 +41,7 @@
             <h2>{{ production.product.name }}</h2>
             <strong>{{ production.produced_quantity|decimal_ptbr }} produzidas</strong>
             <dl>
-                <div><dt>Rendimento</dt><dd>{{ production.yield_percentage|decimal_ptbr }}%</dd></div>
+                <div><dt>Rendimento</dt><dd>{{ production.yield_percentage|percentage_ptbr }}</dd></div>
                 <div><dt>Custo</dt><dd>{{ production.unit_cost|brl }}/un</dd></div>
                 <div><dt>Status</dt><dd>{{ production.get_status_display }}</dd></div>
             </dl>

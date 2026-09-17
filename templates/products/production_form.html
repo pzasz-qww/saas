@@ -139,7 +139,7 @@
             <dl class="production-review-grid">
                 <div><dt>Planejado</dt><dd>{{ production_preview.planned_quantity|decimal_ptbr }}</dd></div>
                 <div><dt>Produzido</dt><dd>{{ production_preview.produced_quantity|decimal_ptbr }}</dd></div>
-                <div><dt>Rendimento</dt><dd>{{ production_preview.yield_percentage|decimal_ptbr }}%</dd></div>
+                <div><dt>Rendimento</dt><dd>{{ production_preview.yield_percentage|percentage_ptbr }}</dd></div>
                 <div><dt>Custo estimado</dt><dd>{{ production_preview.estimated_cost|brl }}</dd></div>
                 <div><dt>Validade</dt><dd>{{ production_preview.expiration_date|date:"d/m/Y"|default:"Não informada" }}</dd></div>
             </dl>

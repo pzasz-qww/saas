@@ -1,6 +1,6 @@
 """Formatting helpers for operator-facing quantities and money."""
 
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 
 from .money import InvalidMoneyValue, round_money
 
@@ -48,6 +48,18 @@ def format_decimal_input(value):
     return format_decimal(value, decimal_separator=".")
 
 
+def format_percentage(value):
+    """Render a percentage with at most one decimal place using Decimal."""
+    parsed = _presentation_decimal(value)
+    try:
+        rounded = parsed.quantize(Decimal("0.1"), rounding=ROUND_HALF_UP)
+    except InvalidOperation:
+        raise InvalidPresentationValue(
+            "Percentual inválido para apresentação."
+        ) from None
+    return f"{format_decimal(rounded)}%"
+
+
 def format_quantity(value, base_unit):
     """Render a physical quantity, promoting g/kg and mL/L from 1000."""
     quantity = _presentation_decimal(value)
@@ -92,6 +104,7 @@ __all__ = [
     "format_decimal",
     "format_decimal_input",
     "format_money",
+    "format_percentage",
     "format_quantity",
     "friendly_recipe_error",
 ]

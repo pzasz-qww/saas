@@ -1,5 +1,6 @@
 from io import BytesIO
 from decimal import Decimal, InvalidOperation
+from urllib.parse import urlencode, urlsplit
 from xml.sax.saxutils import escape
 
 from django.contrib import messages
@@ -20,7 +21,7 @@ from django.db.models import (
 from django.db.models.functions import Coalesce
 from django.http import Http404, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
-from django.urls import reverse
+from django.urls import Resolver404, resolve, reverse
 from django.utils import timezone
 from django.views.decorators.http import require_GET, require_POST
 from reportlab.lib import colors
@@ -541,6 +542,37 @@ def _product_form_initial(product):
     }
 
 
+def _safe_recipe_return_url(*, company, raw_url):
+    if not raw_url:
+        return None
+
+    parsed = urlsplit(str(raw_url))
+    if (
+        parsed.scheme
+        or parsed.netloc
+        or parsed.query
+        or parsed.fragment
+        or not parsed.path.startswith("/")
+    ):
+        return None
+
+    try:
+        match = resolve(parsed.path)
+    except Resolver404:
+        return None
+    if match.view_name != "products:product_edit":
+        return None
+
+    product_id = match.kwargs.get("product_id")
+    if not Product.objects.filter(
+        pk=product_id,
+        company=company,
+        inventory_role="prepared",
+    ).exists():
+        return None
+    return reverse("products:product_edit", args=[product_id])
+
+
 def _component_form_initial(components):
     return [
         {
@@ -631,6 +663,8 @@ def _render_product_form(
     component_formset,
     product=None,
     submission_failed=False,
+    creating_input=False,
+    recipe_return_to=None,
 ):
     advanced_errors = any(
         field_name in form.errors for field_name in PRODUCT_ADVANCED_FIELDS
@@ -647,6 +681,8 @@ def _render_product_form(
         "product": product,
         "editing": product is not None,
         "submission_failed": submission_failed,
+        "creating_input": creating_input,
+        "recipe_return_to": recipe_return_to,
         "advanced_errors": advanced_errors,
         "units": Unit.objects.filter(company=company).order_by("name"),
         "product_types": Product.PRODUCT_TYPES,
@@ -654,6 +690,12 @@ def _render_product_form(
         "sale_forms": Product.SALE_FORMS,
         "stock_dimensions": Product.STOCK_DIMENSIONS,
         "preparation_modes": Product.PREPARATION_MODES,
+        "new_input_url": (
+            f"{reverse('products:product_create')}?"
+            f"{urlencode({'tipo': 'insumo', 'return_to': reverse('products:product_edit', args=[product.pk])})}"
+            if product is not None and product.inventory_role == "prepared"
+            else None
+        ),
     }
     context.update(_product_availability_context(product))
     return render(
@@ -671,9 +713,38 @@ def product_create(request):
         return redirect("products:stock_dashboard")
 
     company = request.current_company
-    form = ProductCreateForm(
-        request.POST if request.method == "POST" else None,
+    raw_return_to = (
+        request.POST.get("return_to")
+        if request.method == "POST"
+        else request.GET.get("return_to")
+    )
+    recipe_return_to = _safe_recipe_return_url(
         company=company,
+        raw_url=raw_return_to,
+    )
+    creating_input = (
+        request.POST.get("creation_mode") == "input"
+        if request.method == "POST"
+        else request.GET.get("tipo") == "insumo"
+    )
+    form_data = request.POST if request.method == "POST" else None
+    if form_data is not None and creating_input:
+        form_data = form_data.copy()
+        form_data["inventory_role"] = "input"
+        form_data["product_type"] = "internal_use"
+        form_data["preparation_mode"] = ""
+    form = ProductCreateForm(
+        form_data,
+        company=company,
+        initial=(
+            {
+                "inventory_role": "input",
+                "product_type": "internal_use",
+                "sale_form": "unit",
+            }
+            if creating_input and request.method == "GET"
+            else None
+        ),
     )
     components_submitted = (
         request.method == "POST" and "components-TOTAL_FORMS" in request.POST
@@ -704,6 +775,8 @@ def product_create(request):
                 form=form,
                 component_formset=component_formset,
                 submission_failed=True,
+                creating_input=creating_input,
+                recipe_return_to=recipe_return_to,
             )
 
         data = form.cleaned_data
@@ -730,6 +803,8 @@ def product_create(request):
                     form=form,
                     component_formset=component_formset,
                     submission_failed=True,
+                    creating_input=creating_input,
+                    recipe_return_to=recipe_return_to,
                 )
 
         name = data["name"].strip()
@@ -785,9 +860,16 @@ def product_create(request):
                 form=form,
                 component_formset=component_formset,
                 submission_failed=True,
+                creating_input=creating_input,
+                recipe_return_to=recipe_return_to,
             )
 
-        messages.success(request, f"Produto cadastrado: {name}.")
+        messages.success(
+            request,
+            f"{'Insumo' if creating_input else 'Produto'} cadastrado: {name}.",
+        )
+        if recipe_return_to:
+            return redirect(recipe_return_to)
         return redirect("products:stock_dashboard")
 
     return _render_product_form(
@@ -795,6 +877,8 @@ def product_create(request):
         company=company,
         form=form,
         component_formset=component_formset,
+        creating_input=creating_input,
+        recipe_return_to=recipe_return_to,
     )
 
 
@@ -1024,7 +1108,7 @@ def stock_entry_create(request):
                 input_unit=data["input_unit"],
                 price_mode=data["price_mode"],
                 price=data["price"],
-                entry_date=data["entry_date"],
+                entry_date=data.get("entry_date") or timezone.localdate(),
                 expiration_date=data.get("expiration_date"),
                 notes=data.get("notes"),
                 created_by=request.user,

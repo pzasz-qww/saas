@@ -15,7 +15,7 @@
         <h2 id="production-success-title">{{ production.produced_quantity|decimal_ptbr }} prontas para venda</h2>
         <dl>
             <div><dt>Custo por unidade</dt><dd>{{ production.unit_cost|brl }}</dd></div>
-            <div><dt>Rendimento</dt><dd>{{ production.yield_percentage|decimal_ptbr }}%</dd></div>
+            <div><dt>Rendimento</dt><dd>{{ production.yield_percentage|percentage_ptbr }}</dd></div>
         </dl>
         <div class="production-success-actions">
             <a href="{% url 'products:stock_dashboard' %}">Voltar ao estoque</a>
@@ -35,7 +35,7 @@
     <section class="production-card">
         <div class="production-detail-summary">
             <div class="production-detail-primary"><span>Quantidade produzida</span><strong>{{ production.produced_quantity|decimal_ptbr }}</strong></div>
-            <div><span>Rendimento</span><strong>{{ production.yield_percentage|decimal_ptbr }}%</strong></div>
+            <div><span>Rendimento</span><strong>{{ production.yield_percentage|percentage_ptbr }}</strong></div>
             <div><span>Custo por unidade</span><strong>{{ production.unit_cost|brl }}</strong></div>
             <div><span>Validade</span><strong>{{ production.expiration_date|date:"d/m/Y"|default:"Não informada" }}</strong></div>
         </div>

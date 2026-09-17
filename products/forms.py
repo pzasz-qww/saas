@@ -275,7 +275,8 @@ class StockEntryForm(forms.Form):
         },
     )
     entry_date = forms.DateField(
-        widget=forms.DateInput(attrs={"type": "date"}),
+        required=False,
+        widget=forms.DateInput(format="%Y-%m-%d", attrs={"type": "date"}),
         error_messages={
             "required": "Informe a data da entrada.",
             "invalid": "Informe uma data de entrada v\u00e1lida.",
@@ -283,7 +284,7 @@ class StockEntryForm(forms.Form):
     )
     expiration_date = forms.DateField(
         required=False,
-        widget=forms.DateInput(attrs={"type": "date"}),
+        widget=forms.DateInput(format="%Y-%m-%d", attrs={"type": "date"}),
         error_messages={"invalid": "Informe uma validade v\u00e1lida."},
     )
     notes = forms.CharField(

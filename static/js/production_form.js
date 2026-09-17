@@ -1,5 +1,5 @@
 (function () {
-    const { formatDecimal, formatQuantity } = window.BarFormatting;
+    const { formatDecimal, formatPercentage, formatQuantity } = window.BarFormatting;
     const form = document.getElementById("production-form");
     const planned = document.getElementById("id_planned_quantity");
     const produced = document.getElementById("id_produced_quantity");
@@ -70,7 +70,7 @@
         document.getElementById("planned-yield").textContent = formatDecimal(plannedValue);
         document.getElementById("actual-yield").textContent = formatDecimal(producedValue);
         document.getElementById("yield-percentage").textContent = plannedValue > 0 && producedValue > 0
-            ? `${formatDecimal((producedValue * 100) / plannedValue)}%`
+            ? formatPercentage((producedValue * 100) / plannedValue)
             : "—";
 
         let allComponentsValid = previewRows.length > 0;

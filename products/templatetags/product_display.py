@@ -4,6 +4,7 @@ from products.presentation import (
     InvalidPresentationValue,
     format_decimal,
     format_money,
+    format_percentage,
     format_quantity,
 )
 
@@ -15,6 +16,14 @@ register = template.Library()
 def decimal_ptbr(value):
     try:
         return format_decimal(value)
+    except InvalidPresentationValue:
+        return "—"
+
+
+@register.filter
+def percentage_ptbr(value):
+    try:
+        return format_percentage(value)
     except InvalidPresentationValue:
         return "—"
 
@@ -33,4 +42,3 @@ def brl(value):
         return format_money(value)
     except InvalidPresentationValue:
         return "—"
-

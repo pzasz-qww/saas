@@ -24,6 +24,14 @@
         return `${formatDecimal(displayValue)} ${displayUnit}`.trim();
     }
 
+    function formatPercentage(value) {
+        if (!Number.isFinite(value)) return "—";
+        return `${value.toLocaleString("pt-BR", {
+            minimumFractionDigits: 0,
+            maximumFractionDigits: 1,
+        })}%`;
+    }
+
     function formatCurrency(value) {
         if (!Number.isFinite(value)) return "—";
         return new Intl.NumberFormat("pt-BR", {
@@ -35,6 +43,7 @@
     window.BarFormatting = Object.freeze({
         formatCurrency,
         formatDecimal,
+        formatPercentage,
         formatQuantity,
     });
 })();

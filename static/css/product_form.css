@@ -150,6 +150,24 @@
     font-size: 13px;
 }
 
+.components-heading-actions {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
+.new-input-link {
+    color: #475569;
+    font-size: 13px;
+    font-weight: 700;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+}
+
+.new-input-link:hover { color: #1d4ed8; }
+
 .component-row {
     display: grid;
     grid-template-columns: minmax(180px, 2fr) minmax(110px, 1fr) minmax(110px, 1fr) auto;
@@ -234,6 +252,11 @@
 
     .components-heading {
         flex-direction: column;
+    }
+
+    .components-heading-actions {
+        align-items: flex-start;
+        justify-content: flex-start;
     }
 
     .summary-grid {
