@@ -10,6 +10,7 @@ from products.presentation import (
     InvalidPresentationValue,
     format_decimal,
     format_money,
+    format_percentage,
     format_quantity,
 )
 
@@ -73,12 +74,25 @@ class QuantityPresentationTests(SimpleTestCase):
         self.assertEqual(format_money(Decimal("130")), "R$ 130,00")
         self.assertEqual(format_money(Decimal("299250")), "R$ 299.250,00")
 
+    def test_percentage_uses_one_decimal_only_when_needed(self):
+        cases = (
+            ("100", "100%"),
+            ("80.000000", "80%"),
+            ("87.5", "87,5%"),
+            ("88.88888888888888888888888889", "88,9%"),
+            ("71.42857142857142857142857143", "71,4%"),
+        )
+        for raw, expected in cases:
+            with self.subTest(raw=raw):
+                self.assertEqual(format_percentage(Decimal(raw)), expected)
+
     def test_template_filters_reuse_the_central_formatter(self):
         template = Template(
             "{% load product_display %}"
             "{{ weight|physical_quantity:'g' }}|"
             "{{ volume|physical_quantity:'mL' }}|"
-            "{{ money|brl }}"
+            "{{ money|brl }}|"
+            "{{ percentage|percentage_ptbr }}"
         )
 
         rendered = template.render(
@@ -87,11 +101,12 @@ class QuantityPresentationTests(SimpleTestCase):
                     "weight": Decimal("5000.000000"),
                     "volume": Decimal("4500.000000"),
                     "money": Decimal("16.250000"),
+                    "percentage": Decimal("88.88888888888888888888888889"),
                 }
             )
         )
 
-        self.assertEqual(rendered, "5 kg|4,5 L|R$ 16,25")
+        self.assertEqual(rendered, "5 kg|4,5 L|R$ 16,25|88,9%")
 
 
 class PdfPresentationTests(TestCase):

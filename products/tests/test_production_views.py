@@ -213,6 +213,34 @@ class ProductionViewTests(TestCase):
             D("4500"),
         )
 
+    def test_yield_percentage_is_compact_in_preview_history_and_detail(self):
+        preview_payload = self.production_payload(
+            planned="7",
+            produced="5",
+            action="preview",
+        )
+        preview = self.client.post(
+            reverse("products:production_create", args=[self.product.pk]),
+            preview_payload,
+        )
+        self.assertContains(preview, "71,4%")
+        self.assertNotContains(preview, "71,428571")
+
+        result = create_production(
+            company=self.company,
+            product=self.product,
+            planned_quantity=D("9"),
+            produced_quantity=D("8"),
+            created_by=self.user,
+        )
+        history = self.client.get(reverse("products:production_list"))
+        detail = self.client.get(
+            reverse("products:production_detail", args=[result.production.pk])
+        )
+        for response in (history, detail):
+            self.assertContains(response, "88,9%")
+            self.assertNotContains(response, "88,888888")
+
     def test_confirmation_cannot_skip_or_change_the_reviewed_summary(self):
         direct_confirmation = self.client.post(
             reverse("products:production_create", args=[self.product.pk]),

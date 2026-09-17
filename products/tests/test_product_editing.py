@@ -5,7 +5,7 @@ from django.urls import reverse
 
 from orders.models import Order, OrderItem
 from orders.services import approve_order, cancel_paid_order_with_stock_return
-from products.models import ProductComponent
+from products.models import Product, ProductComponent
 from products.production_services import create_production
 from products.recipe_services import get_product_availability
 
@@ -395,6 +395,108 @@ class ProductEditingTests(TestCase):
 
         self.assertContains(response, self.edit_url())
         self.assertContains(response, "Editar receita")
+
+    def test_recipe_offers_new_input_with_prefilled_safe_return(self):
+        response = self.client.get(self.edit_url())
+
+        self.assertContains(response, "+ Novo insumo")
+        new_input_url = response.context["new_input_url"]
+        create_response = self.client.get(new_input_url)
+        self.assertEqual(create_response.status_code, 200)
+        self.assertContains(create_response, "Novo insumo")
+        self.assertContains(create_response, "Voltar para a receita")
+        self.assertEqual(
+            create_response.context["form"]["inventory_role"].value(),
+            "input",
+        )
+        self.assertEqual(
+            create_response.context["recipe_return_to"],
+            self.edit_url(),
+        )
+
+    def test_new_recipe_input_belongs_to_company_and_returns_available(self):
+        response = self.client.post(
+            reverse("products:product_create"),
+            {
+                "creation_mode": "input",
+                "return_to": self.edit_url(),
+                "name": "Hortelã fresca",
+                "sale_price": "0",
+                "sale_form": "unit",
+                "inventory_role": "prepared",
+                "preparation_mode": "on_demand",
+                "product_type": "sale",
+                "stock_dimension": "count",
+            },
+        )
+
+        self.assertRedirects(response, self.edit_url())
+        ingredient = Product.objects.get(name="Hortelã fresca")
+        self.assertEqual(ingredient.company, self.company)
+        self.assertEqual(ingredient.inventory_role, "input")
+        self.assertEqual(ingredient.product_type, "internal_use")
+        self.assertIsNone(ingredient.preparation_mode)
+        recipe = self.client.get(self.edit_url())
+        self.assertContains(recipe, "Hortelã fresca")
+        self.assertContains(recipe, f'value="{ingredient.pk}"', html=False)
+
+    def test_new_input_rejects_external_or_foreign_recipe_return(self):
+        create_url = reverse("products:product_create")
+        payload = {
+            "creation_mode": "input",
+            "return_to": "https://evil.example/roubo",
+            "name": "Insumo seguro",
+            "sale_price": "0",
+            "sale_form": "unit",
+            "stock_dimension": "count",
+        }
+        external = self.client.post(create_url, payload)
+        self.assertEqual(external.status_code, 302)
+        self.assertEqual(external.url, reverse("products:stock_dashboard"))
+        self.assertFalse(external.url.startswith("https://evil.example"))
+
+        other_company = make_company(name="Bar externo do retorno")
+        foreign_recipe = make_product(
+            company=other_company,
+            name="Receita externa",
+            inventory_role="prepared",
+            preparation_mode="on_demand",
+        )
+        payload["name"] = "Segundo insumo seguro"
+        payload["return_to"] = reverse(
+            "products:product_edit",
+            args=[foreign_recipe.pk],
+        )
+        foreign = self.client.post(create_url, payload)
+        self.assertEqual(foreign.url, reverse("products:stock_dashboard"))
+        self.assertEqual(
+            Product.objects.get(name="Segundo insumo seguro").company,
+            self.company,
+        )
+
+    def test_user_without_permission_cannot_create_input_from_recipe(self):
+        waiter = make_user(
+            company=self.company,
+            role="waiter",
+            username="sem-permissao-novo-insumo",
+        )
+        self.client.force_login(waiter)
+
+        response = self.client.post(
+            reverse("products:product_create"),
+            {
+                "creation_mode": "input",
+                "return_to": self.edit_url(),
+                "name": "Insumo proibido",
+                "sale_price": "0",
+                "sale_form": "unit",
+                "stock_dimension": "count",
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.url, reverse("products:stock_dashboard"))
+        self.assertFalse(Product.objects.filter(name="Insumo proibido").exists())
 
     def test_removal_preserves_sale_snapshot_and_future_sales_use_new_recipe(self):
         order = Order.objects.create(

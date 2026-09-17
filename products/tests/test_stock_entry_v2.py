@@ -1,5 +1,6 @@
 from datetime import date, timedelta
 from decimal import Decimal
+from unittest.mock import patch
 
 from django.test import TestCase
 from django.urls import reverse
@@ -318,6 +319,26 @@ class StockEntryViewV2Tests(TestCase):
         self.assertEqual(entry.total_cost, Decimal("750.00"))
         self.assertEqual(entry.created_by, self.owner)
 
+    def test_entry_date_preserves_informed_date_and_blank_uses_local_today(self):
+        informed_date = date(2026, 9, 10)
+        informed = self.client.post(
+            self.url,
+            self.valid_post(entry_date=informed_date.isoformat()),
+        )
+        self.assertEqual(informed.status_code, 302)
+        self.assertEqual(StockEntry.objects.get().entry_date, informed_date)
+
+        StockEntry.objects.all().delete()
+        local_today = date(2026, 9, 17)
+        with patch("products.views.timezone.localdate", return_value=local_today):
+            defaulted = self.client.post(
+                self.url,
+                self.valid_post(entry_date=""),
+            )
+
+        self.assertEqual(defaulted.status_code, 302)
+        self.assertEqual(StockEntry.objects.get().entry_date, local_today)
+
     def test_success_message_preserves_input_unit_and_formats_total_cost(self):
         response = self.client.post(
             self.url,
@@ -395,6 +416,12 @@ class StockEntryViewV2Tests(TestCase):
         self.assertContains(response, 'data-dimension="weight"', html=False)
         self.assertContains(response, "Validade (opcional)")
         self.assertContains(response, "Data da entrada")
+        self.assertContains(response, "Hoje")
+        self.assertContains(
+            response,
+            f'value="{timezone.localdate().isoformat()}"',
+            html=False,
+        )
 
     def test_quick_entry_preselects_only_a_product_from_the_current_company(self):
         response = self.client.get(f"{self.url}?produto={self.product.pk}")
