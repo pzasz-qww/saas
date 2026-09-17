@@ -21,9 +21,11 @@ from accounts.permissions import (
     company_required,
 )
 from products.models import Product
+from products.presentation import friendly_recipe_error
 from products.recipe_services import (
     RecipeServiceError,
     build_sale_consumption_plan,
+    get_products_availability,
 )
 from products.sale_quantities import (
     PhysicalSaleQuantityError,
@@ -88,11 +90,13 @@ def build_stock_shortage_message(
             ]
             if shortage.available <= 0:
                 detail = (
-                    f"Ingrediente {ingredient.name} ({prepared_names}): sem estoque."
+                    f"A disponibilidade de {prepared_names} mudou. "
+                    f"Ingrediente {ingredient.name}: sem estoque."
                 )
             else:
                 detail = (
-                    f"Ingrediente {ingredient.name} ({prepared_names}): necessários "
+                    f"A disponibilidade de {prepared_names} mudou. "
+                    f"Ingrediente {ingredient.name}: necessários "
                     f"{format_stock_quantity(shortage.requested)} {base_unit}, disponíveis "
                     f"{format_stock_quantity(shortage.available)} {base_unit}."
                 )
@@ -112,17 +116,26 @@ def build_stock_shortage_message(
             ).available_sale_quantity
         except PhysicalSaleQuantityError:
             available = shortage.available
-        sale_unit_label = {
-            "dose": "doses",
-            "portion": "porções",
-        }.get(product.sale_form, "unidades")
+        sale_unit_labels = {
+            "dose": ("dose", "doses"),
+            "portion": ("porção", "porções"),
+        }.get(product.sale_form, ("unidade", "unidades"))
+        sale_unit_label = (
+            sale_unit_labels[0]
+            if requested == Decimal("1")
+            else sale_unit_labels[1]
+        )
         if shortage.available <= 0:
-            detail = f"{product.name}: sem estoque."
+            detail = (
+                f"A quantidade disponível de {product.name} mudou. "
+                f"Disponível agora: 0 (sem estoque). "
+                f"Solicitado: {format_stock_quantity(requested)} {sale_unit_label}."
+            )
         else:
             detail = (
-                f"{product.name}: solicitadas "
-                f"{format_stock_quantity(requested)} {sale_unit_label}, disponíveis "
-                f"{format_stock_quantity(available)}."
+                f"A quantidade disponível de {product.name} mudou. "
+                f"Disponível agora: {format_stock_quantity(available)}. "
+                f"Solicitado: {format_stock_quantity(requested)} {sale_unit_label}."
             )
         details.append(detail)
 
@@ -153,6 +166,33 @@ def parse_positive_integer(value):
         return None
 
     return parsed_value
+
+
+def build_approval_shortage_message(*, order, company, shortage):
+    items = list(order.items.select_related("product").order_by("product_id", "id"))
+    requested_quantities = defaultdict(lambda: Decimal("0.00"))
+    products_by_id = {}
+    for item in items:
+        requested_quantities[item.product_id] += item.quantity
+        products_by_id[item.product_id] = item.product
+
+    try:
+        consumption_plan = build_sale_consumption_plan(
+            items=items,
+            company=company,
+        )
+    except (RecipeServiceError, PhysicalSaleQuantityError, StockServiceError):
+        return (
+            "A disponibilidade mudou antes da aprovação. "
+            "Revise o pedido e tente novamente."
+        )
+
+    return build_stock_shortage_message(
+        [shortage],
+        products_by_id,
+        requested_quantities,
+        consumption_plan,
+    )
 
 
 def order_items_for_company(company):
@@ -300,7 +340,7 @@ def pdv_view(request):
         messages.success(request, f"Pedido #{order.id} enviado como pré-venda.")
         return redirect("orders:order_detail", order_id=order.id)
 
-    products = (
+    products = list(
         Product.objects
         .filter(
             company=company,
@@ -310,10 +350,52 @@ def pdv_view(request):
         .select_related("category", "unit")
         .order_by("category__name", "name")
     )
+    availability_batch = get_products_availability(products, company=company)
 
     categories = defaultdict(list)
 
     for product in products:
+        product.pdv_availability = (
+            availability_batch.availability_by_product.get(product.pk)
+        )
+        product.pdv_availability_error = (
+            availability_batch.errors_by_product.get(product.pk)
+        )
+        product.pdv_is_available = bool(
+            product.pdv_availability
+            and product.pdv_availability.available_quantity > 0
+        )
+        product.pdv_available_quantity = (
+            format_stock_quantity(product.pdv_availability.available_quantity)
+            if product.pdv_availability is not None
+            else "0"
+        )
+        if product.pdv_availability_error is not None:
+            product.pdv_unavailable_reason = friendly_recipe_error(
+                product.pdv_availability_error
+            )
+        elif not product.pdv_is_available:
+            limiter = (
+                product.pdv_availability.limiting_component
+                if product.pdv_availability is not None
+                else None
+            )
+            if limiter is not None:
+                product.pdv_unavailable_reason = (
+                    f"Sem {limiter.ingredient.name} suficiente."
+                )
+            elif (
+                product.inventory_role == "prepared"
+                and product.preparation_mode == "pre_portioned"
+            ):
+                product.pdv_unavailable_reason = (
+                    "Nenhuma unidade pronta para venda."
+                )
+            else:
+                product.pdv_unavailable_reason = "Sem estoque disponível."
+        else:
+            product.pdv_unavailable_reason = ""
+
         category_name = (
             product.category.name
             if product.category_id
@@ -485,7 +567,14 @@ def approve_order(request, order_id, payment_method):
             user=request.user,
         )
     except InsufficientStock as error:
-        messages.warning(request, str(error))
+        messages.warning(
+            request,
+            build_approval_shortage_message(
+                order=order,
+                company=company,
+                shortage=error,
+            ),
+        )
     except (OrderServiceError, RecipeServiceError, StockServiceError) as error:
         messages.warning(request, str(error))
     else:

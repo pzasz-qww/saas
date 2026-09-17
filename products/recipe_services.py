@@ -77,6 +77,12 @@ class ProductAvailability:
     source: str
 
 
+@dataclass(frozen=True, slots=True)
+class ProductAvailabilityBatch:
+    availability_by_product: dict[int, ProductAvailability]
+    errors_by_product: dict[int, RecipeServiceError]
+
+
 def _company_id(company):
     company_id = getattr(company, "pk", company)
     if company_id is None:
@@ -455,6 +461,141 @@ def get_product_availability(product):
     return _component_based_availability(product, source="components")
 
 
+def get_products_availability(products, *, company):
+    """Calculate sale availability for many products with bounded queries."""
+    company_id = _company_id(company)
+    products = list(products)
+    product_by_id = {}
+    errors_by_product = {}
+
+    for product in products:
+        if product.pk is None:
+            continue
+        if product.company_id != company_id:
+            errors_by_product[product.pk] = InvalidOperationalRecipe(
+                "O produto pertence a outra empresa."
+            )
+            continue
+        product_by_id[product.pk] = product
+
+    on_demand_ids = {
+        product.pk
+        for product in product_by_id.values()
+        if product.inventory_role == "prepared"
+        and product.preparation_mode == "on_demand"
+    }
+    components = list(
+        ProductComponent.objects.filter(
+            company_id=company_id,
+            product_id__in=on_demand_ids,
+        )
+        .select_related("ingredient")
+        .order_by("product_id", "ingredient_id", "id")
+    )
+    components_by_product = defaultdict(list)
+    stock_product_ids = set(product_by_id) - on_demand_ids
+    for component in components:
+        components_by_product[component.product_id].append(component)
+        stock_product_ids.add(component.ingredient_id)
+
+    stock_by_product = dict(
+        StockEntry.objects.filter(
+            company_id=company_id,
+            product_id__in=stock_product_ids,
+            remaining_quantity__gt=ZERO,
+        )
+        .values("product_id")
+        .annotate(total=Sum("remaining_quantity"))
+        .values_list("product_id", "total")
+    )
+
+    availability_by_product = {}
+    for product in product_by_id.values():
+        try:
+            if product.pk not in on_demand_ids:
+                sale_availability = get_sale_availability(
+                    product,
+                    stock_by_product.get(product.pk, ZERO) or ZERO,
+                )
+                availability_by_product[product.pk] = ProductAvailability(
+                    product=product,
+                    available_quantity=sale_availability.available_sale_quantity,
+                    limiting_component=None,
+                    component_availability=(),
+                    source="own_stock",
+                )
+                continue
+
+            product_components = components_by_product.get(product.pk, ())
+            if not product_components:
+                raise InvalidOperationalRecipe(
+                    f"O produto preparado {product.name} não possui componentes."
+                )
+
+            try:
+                get_physical_consumption(product, Decimal("1"))
+            except PhysicalSaleQuantityError as error:
+                raise InvalidOperationalRecipe(str(error)) from error
+
+            component_availability = []
+            seen_ingredients = set()
+            for component in product_components:
+                if component.ingredient_id in seen_ingredients:
+                    raise InvalidOperationalRecipe(
+                        "A receita possui ingredientes duplicados."
+                    )
+                seen_ingredients.add(component.ingredient_id)
+                normalized = _normalized_component(
+                    component,
+                    product=product,
+                    ingredient=component.ingredient,
+                )
+                quantity_per_sale_unit = _exact_physical_quantity(
+                    normalized.quantity,
+                    label=f"A quantidade do componente {component.ingredient.name}",
+                )
+                physical_stock = (
+                    stock_by_product.get(component.ingredient_id, ZERO) or ZERO
+                )
+                component_availability.append(
+                    ComponentAvailability(
+                        source_component=component,
+                        ingredient=component.ingredient,
+                        quantity_per_sale_unit=quantity_per_sale_unit,
+                        physical_stock=physical_stock,
+                        available_quantity=(
+                            physical_stock // quantity_per_sale_unit
+                        ),
+                        base_unit=normalized.base_unit,
+                    )
+                )
+
+            limiting = min(
+                component_availability,
+                key=lambda item: (
+                    item.available_quantity,
+                    item.ingredient.name.casefold(),
+                    item.ingredient.pk,
+                ),
+            )
+            availability_by_product[product.pk] = ProductAvailability(
+                product=product,
+                available_quantity=limiting.available_quantity,
+                limiting_component=limiting,
+                component_availability=tuple(component_availability),
+                source="components",
+            )
+        except RecipeServiceError as error:
+            errors_by_product[product.pk] = error
+        except PhysicalSaleQuantityError as error:
+            errors_by_product[product.pk] = InvalidOperationalRecipe(str(error))
+
+    return ProductAvailabilityBatch(
+        availability_by_product=availability_by_product,
+        errors_by_product=errors_by_product,
+    )
+
+
 def get_production_potential(product):
     """Return theoretical additional output for a pre-portioned product."""
     if not (
@@ -475,11 +616,13 @@ __all__ = [
     "ExpandedProductComponent",
     "InvalidOperationalRecipe",
     "ProductAvailability",
+    "ProductAvailabilityBatch",
     "RecipeServiceError",
     "SaleConsumptionPlan",
     "SaleLineConsumption",
     "build_sale_consumption_plan",
     "expand_product_components",
     "get_product_availability",
+    "get_products_availability",
     "get_production_potential",
 ]

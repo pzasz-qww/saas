@@ -1,17 +1,17 @@
 {% extends "base.html" %}
-{% load static %}
+{% load static product_display %}
 
 {% block title %}PDV{% endblock %}
 
 {% block extra_css %}
-    <link rel="stylesheet" href="{% static 'css/pdv.css' %}?v=3">
+    <link rel="stylesheet" href="{% static 'css/pdv.css' %}?v=4">
 {% endblock %}
 
 {% block content %}
-    <h1>PDV</h1>
-    <p class="subtitle">
-        Venda rápida por botões. Os pedidos entram como pré-venda.
-    </p>
+    <header class="pdv-header">
+        <h1>PDV</h1>
+        <p class="subtitle">Venda rápida. Os pedidos entram como pré-venda.</p>
+    </header>
 
     {% if messages %}
         <div class="messages" role="alert" aria-live="polite">
@@ -23,49 +23,114 @@
         </div>
     {% endif %}
 
+    <section class="pdv-search" aria-labelledby="pdv_search_title">
+        <h2 id="pdv_search_title">Encontrar produto</h2>
+        <label for="product_search">Buscar produto</label>
+        <input
+            type="search"
+            id="product_search"
+            placeholder="Nome ou categoria"
+            inputmode="search"
+            autocomplete="off"
+        >
+        <div class="pdv-category-filters" aria-label="Filtrar por categoria">
+            <button type="button" class="category-filter is-active" data-category-filter="all" aria-pressed="true">
+                Todos
+            </button>
+            {% for category in categories %}
+                <button type="button" class="category-filter" data-category-filter="{{ category }}" aria-pressed="false">
+                    {{ category }}
+                </button>
+            {% endfor %}
+        </div>
+        <p id="pdv_filter_status" class="sr-only" aria-live="polite"></p>
+    </section>
+
     <div class="layout">
-
-        <section class="products-panel">
-
+        <section class="products-panel" aria-label="Produtos para venda">
             {% for category, products in categories.items %}
-
-                <section class="category">
-
+                <section class="category" data-category-section="{{ category }}">
                     <h2>{{ category }}</h2>
-
                     <div class="product-grid">
-
                         {% for product in products %}
-
-                            <button
-                                type="button"
-                                class="product-button"
+                            <article
+                                class="pdv-product-card{% if not product.pdv_is_available %} is-unavailable{% endif %}"
+                                data-product-card
                                 data-product-id="{{ product.id }}"
                                 data-product-name="{{ product.name }}"
-                                data-product-price="{{ product.sale_price }}">
+                                data-product-category="{{ category }}"
+                                data-search="{{ product.name|lower }} {{ category|lower }}"
+                            >
+                                <header class="product-card-header">
+                                    <span class="product-kind">
+                                        {% if product.inventory_role == "prepared" and product.preparation_mode == "on_demand" %}
+                                            Feito na hora
+                                        {% elif product.inventory_role == "prepared" and product.preparation_mode == "pre_portioned" %}
+                                            Pronto para venda
+                                        {% elif product.sale_form == "dose" %}
+                                            Dose
+                                        {% elif product.sale_form == "portion" %}
+                                            Porção
+                                        {% else %}
+                                            Venda direta
+                                        {% endif %}
+                                    </span>
+                                    <h3 class="product-name">{{ product.name }}</h3>
+                                </header>
 
-                                <div class="product-name">
-                                    {{ product.name }}
+                                <div class="product-price">{{ product.sale_price|brl }}</div>
+
+                                <div class="product-availability{% if not product.pdv_is_available %} product-availability--empty{% endif %}">
+                                    {% if product.pdv_is_available %}
+                                        <strong>
+                                            {{ product.pdv_available_quantity }}
+                                            {% if product.inventory_role == "prepared" and product.preparation_mode == "pre_portioned" %}
+                                                prontas
+                                            {% elif product.sale_form == "dose" %}
+                                                doses disponíveis
+                                            {% elif product.sale_form == "portion" %}
+                                                porções disponíveis
+                                            {% else %}
+                                                disponíveis
+                                            {% endif %}
+                                        </strong>
+                                        {% if product.sale_form == "dose" %}
+                                            <span>Dose: {{ product.dose_ml|physical_quantity:"mL" }}</span>
+                                        {% elif product.sale_form == "portion" and not product.inventory_role == "prepared" %}
+                                            <span>Porção: {{ product.portion_g|physical_quantity:"g" }}</span>
+                                        {% endif %}
+                                        {% if product.inventory_role == "prepared" and product.preparation_mode == "on_demand" and product.pdv_availability.limiting_component %}
+                                            <span>Limitado por: {{ product.pdv_availability.limiting_component.ingredient.name }}</span>
+                                        {% endif %}
+                                    {% else %}
+                                        <strong>Esgotado</strong>
+                                        <span>{{ product.pdv_unavailable_reason }}</span>
+                                    {% endif %}
                                 </div>
 
-                                <div class="product-price">
-                                    R$ {{ product.sale_price|floatformat:2 }}
-                                </div>
-
-                            </button>
-
+                                <button
+                                    type="button"
+                                    class="product-button"
+                                    data-product-id="{{ product.id }}"
+                                    data-product-name="{{ product.name }}"
+                                    data-product-price="{{ product.sale_price }}"
+                                    data-product-available="{{ product.pdv_available_quantity }}"
+                                    {% if not product.pdv_is_available %}disabled aria-disabled="true"{% endif %}
+                                >
+                                    {% if product.pdv_is_available %}+ Adicionar{% else %}Esgotado{% endif %}
+                                </button>
+                            </article>
                         {% endfor %}
-
                     </div>
-
                 </section>
-
             {% empty %}
-
                 <p>Nenhum produto ativo cadastrado.</p>
-
             {% endfor %}
 
+            <section id="pdv_no_results" class="pdv-no-results" hidden aria-live="polite">
+                <p id="pdv_no_results_text">Nenhum produto encontrado.</p>
+                <button type="button" id="clear_product_filters">Limpar filtros</button>
+            </section>
         </section>
 
         <aside class="cart" id="cart">
@@ -74,41 +139,37 @@
                     <span id="cart-summary-count">0 itens</span>
                     <strong id="cart-summary-total">R$ 0,00</strong>
                 </div>
-
                 <button
                     type="button"
                     class="cart-toggle-button"
                     id="cart-toggle-button"
                     aria-controls="cart-content"
-                    aria-expanded="false">
+                    aria-expanded="false"
+                >
                     Ver carrinho
                 </button>
             </div>
 
             <div class="cart-content" id="cart-content">
                 <h2>Carrinho</h2>
+                <p class="cart-stock-note">A disponibilidade será conferida novamente na aprovação.</p>
 
                 <form method="post" id="cart-form">
                     {% csrf_token %}
-
                     <div class="field">
-                        <label for="table_or_tab">
-                            Mesa / Comanda
-                        </label>
-
+                        <label for="table_or_tab">Mesa / Comanda</label>
                         <input
                             type="text"
                             name="table_or_tab"
                             id="table_or_tab"
                             value="{{ initial_table_or_tab }}"
-                            placeholder="Ex: Mesa 04">
+                            placeholder="Ex: Mesa 04"
+                        >
                     </div>
 
                     <div class="cart-items-scroll">
                         <div id="cart-items">
-                            <div class="empty-cart">
-                                Nenhum item no carrinho.
-                            </div>
+                            <div class="empty-cart">Nenhum item no carrinho.</div>
                         </div>
                     </div>
 
@@ -117,24 +178,12 @@
                             <span>Total</span>
                             <span id="cart-total">R$ 0,00</span>
                         </div>
-
-                        <input
-                            type="hidden"
-                            name="cart_data"
-                            id="cart_data">
-
+                        <input type="hidden" name="cart_data" id="cart_data">
                         <div class="cart-footer-actions">
-                            <button
-                                type="button"
-                                class="clear-cart-button"
-                                id="clear-cart-button">
+                            <button type="button" class="clear-cart-button" id="clear-cart-button">
                                 Limpar
                             </button>
-
-                            <button
-                                type="submit"
-                                id="cart-submit-button"
-                                class="submit-button">
+                            <button type="submit" id="cart-submit-button" class="submit-button">
                                 Enviar pré-venda
                             </button>
                         </div>
@@ -142,11 +191,10 @@
                 </form>
             </div>
         </aside>
-
     </div>
 
+    <p id="pdv_cart_notice" class="pdv-cart-notice" aria-live="polite"></p>
     {{ initial_cart|json_script:"pdv-initial-cart" }}
-
 {% endblock %}
 
 {% block extra_js %}
