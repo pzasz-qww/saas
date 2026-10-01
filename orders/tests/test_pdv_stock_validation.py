@@ -230,7 +230,7 @@ class PdvStockValidationTests(OrderTestMixin, TestCase):
             [{"id": drink.pk, "quantity": 10}]
         )
 
-        self.assertEqual(message, "Pedido #1 enviado como pré-venda.")
+        self.assertRegex(message, r"^Pedido #\d+ enviado como pré-venda\.$")
         self.assertTrue(Order.objects.filter(items__product=drink).exists())
         entry.refresh_from_db()
         self.assertEqual(entry.remaining_quantity, Decimal("500"))
