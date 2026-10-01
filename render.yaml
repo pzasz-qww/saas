@@ -1,0 +1,26 @@
+databases:
+  - name: praca-pdv-prebeta3-db
+    databaseName: praca_pdv_prebeta3
+    user: praca_pdv
+    plan: free
+
+services:
+  - type: web
+    name: praca-pdv-prebeta3
+    runtime: python
+    plan: free
+    buildCommand: ./build.sh
+    startCommand: gunicorn config.wsgi:application
+    envVars:
+      - key: DEPLOYMENT_MODE
+        value: cloud
+      - key: DEBUG
+        value: "false"
+      - key: PYTHON_VERSION
+        value: 3.13.14
+      - key: SECRET_KEY
+        generateValue: true
+      - key: DATABASE_URL
+        fromDatabase:
+          name: praca-pdv-prebeta3-db
+          property: connectionString

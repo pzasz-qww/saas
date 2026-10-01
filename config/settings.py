@@ -99,22 +99,25 @@ if IS_PRODUCTION and (
         "SECRET_KEY precisa ser forte e exclusiva em produção."
     )
 
-allowed_hosts_from_environment = os.getenv("ALLOWED_HOSTS")
-
-if IS_PRODUCTION and not allowed_hosts_from_environment:
-    raise ImproperlyConfigured(
-        "Defina ALLOWED_HOSTS explicitamente em produção."
-    )
-
+allowed_hosts_from_environment = os.getenv("ALLOWED_HOSTS", "")
+render_external_hostname = os.getenv("RENDER_EXTERNAL_HOSTNAME", "").strip()
 allowed_hosts_value = (
     allowed_hosts_from_environment
-    or "localhost,127.0.0.1,[::1]"
+    or ("" if IS_PRODUCTION else "localhost,127.0.0.1,[::1]")
 )
 ALLOWED_HOSTS = [
     host.strip()
     for host in allowed_hosts_value.split(",")
     if host.strip()
 ]
+
+if render_external_hostname and render_external_hostname not in ALLOWED_HOSTS:
+    ALLOWED_HOSTS.append(render_external_hostname)
+
+if IS_PRODUCTION and not ALLOWED_HOSTS:
+    raise ImproperlyConfigured(
+        "Defina ALLOWED_HOSTS ou RENDER_EXTERNAL_HOSTNAME em produção."
+    )
 
 if (IS_PRODUCTION or IS_PORTABLE) and "*" in ALLOWED_HOSTS:
     raise ImproperlyConfigured(
@@ -127,6 +130,12 @@ CSRF_TRUSTED_ORIGINS = [
     for origin in csrf_trusted_origins_value.split(",")
     if origin.strip()
 ]
+
+render_external_origin = (
+    f"https://{render_external_hostname}" if render_external_hostname else ""
+)
+if render_external_origin and render_external_origin not in CSRF_TRUSTED_ORIGINS:
+    CSRF_TRUSTED_ORIGINS.append(render_external_origin)
 
 
 # Application definitiona

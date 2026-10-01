@@ -94,6 +94,35 @@ class DeploymentSettingsTests(TestCase):
         self.assertEqual(loaded["DEPLOYMENT_MODE"], "cloud")
         self.assertTrue(loaded["IS_PRODUCTION"])
 
+    def test_render_hostname_configures_host_and_https_csrf_origin(self):
+        loaded = self.load_settings(
+            {
+                "RENDER": "true",
+                "RENDER_EXTERNAL_HOSTNAME": "praca-pdv.onrender.com",
+                "SECRET_KEY": "r" * 64,
+                "DATABASE_URL": "postgresql://user:pass@host/cloud",
+            }
+        )
+
+        self.assertEqual(loaded["ALLOWED_HOSTS"], ["praca-pdv.onrender.com"])
+        self.assertEqual(
+            loaded["CSRF_TRUSTED_ORIGINS"],
+            ["https://praca-pdv.onrender.com"],
+        )
+
+    def test_cloud_requires_an_explicit_or_render_host(self):
+        with self.assertRaisesRegex(
+            ImproperlyConfigured,
+            "ALLOWED_HOSTS ou RENDER_EXTERNAL_HOSTNAME",
+        ):
+            self.load_settings(
+                {
+                    "DEPLOYMENT_MODE": "cloud",
+                    "SECRET_KEY": "c" * 64,
+                    "DATABASE_URL": "postgresql://user:pass@host/cloud",
+                }
+            )
+
     def test_portable_rejects_wildcard_host(self):
         with TemporaryDirectory() as temporary_directory:
             with self.assertRaisesRegex(
