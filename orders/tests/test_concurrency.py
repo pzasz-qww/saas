@@ -1,4 +1,5 @@
 from concurrent.futures import ThreadPoolExecutor
+from decimal import Decimal
 from threading import Barrier, Event
 from unittest.mock import patch
 
@@ -151,7 +152,7 @@ class OrderStateConcurrencyTests(OrderTestMixin, TransactionTestCase):
             close_old_connections()
             try:
                 editable = OrderItem.objects.get(pk=item.pk)
-                editable.quantity = 9
+                editable.quantity = Decimal("9")
                 edit_started.set()
                 try:
                     editable.save()
