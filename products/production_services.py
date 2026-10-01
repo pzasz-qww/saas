@@ -370,7 +370,6 @@ def reverse_production(*, company, production_id, user=None):
     production_movements = list(
         StockMovement.objects.select_for_update()
         .filter(production=production)
-        .select_related("stock_entry")
         .order_by("product_id", "stock_entry_id", "id")
     )
     output_movements = [
