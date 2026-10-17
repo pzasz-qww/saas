@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block title %}Ticket do pedido {{ job.order_reference }}{% endblock %}
+{% block extra_css %}{% include "printing/prebeta4/style.html" %}{% endblock %}
+{% block content %}<div class="print-page"><h1>Ticket do pedido #{{ job.order_reference }}</h1><p><a href="{% url 'printing:jobs' %}">Voltar aos trabalhos</a></p>
+<p>Preview do snapshot salvo. {{ job.printer.characters_per_line }} caracteres por linha · {{ job.printer.paper_width }} mm.</p>
+{% if job.payload.missing_historical_data %}<p class="error">Este pedido não possui todos os dados históricos. Cargo/nome do funcionário podem estar sem registro; nomes de produtos sem histórico foram capturados ao criar o ticket.</p>{% endif %}
+<div class="print-scroll">{{ ticket_html }}</div>
+<details><summary>Versão textual</summary><pre>{{ ticket_text }}</pre></details>
+<p class="muted">A aparência exata, os acentos e o corte dependem da configuração e da validação física da impressora.</p></div>{% endblock %}

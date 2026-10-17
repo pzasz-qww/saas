@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Impressão · Configurações{% endblock %}
+{% block extra_css %}{% include "printing/prebeta4/style.html" %}{% endblock %}
+{% block content %}
+<div class="print-page">
+  <h1>Configurações de impressão</h1>
+  <p>{{ request.current_company.name }} · {{ request.user.username }}</p>
+  <p><a href="{% url 'printing:jobs' %}">Ver trabalhos de impressão</a></p>
+  {% for message in messages %}<p role="status">{{ message }}</p>{% endfor %}
+  {% if token %}<section class="print-card"><h2>Credencial do bridge</h2><p>Copie agora. Este segredo só aparece nesta resposta. A credencial anterior foi revogada.</p><code>{{ token }}</code><p>Configure no computador do bar, na variável PRINT_BRIDGE_TOKEN.</p></section>{% endif %}
+  <section class="print-card"><h2>Impressão automática</h2><p>Gera um ticket após a venda confirmada. Se estiver desativada, novas vendas não entram na fila.</p>
+    <form method="post">{% csrf_token %}{{ settings_form.as_p }}<button name="action" value="save_settings">Salvar configuração</button></form>
+  </section>
+  {% for printer, form in printer_forms %}
+  <section class="print-card"><h2>{{ printer.name }}</h2><p class="muted">Identificador para o bridge: <code>{{ printer.identifier }}</code></p>
+    <form method="post">{% csrf_token %}<input type="hidden" name="printer_id" value="{{ printer.pk }}">{{ form.as_p }}<button name="action" value="save_printer">Salvar impressora</button></form>
+    <details><summary>Credencial do bridge</summary><p>Gerar outra credencial revoga a anterior. Termine os trabalhos em andamento antes da troca.</p>
+      <form method="post">{% csrf_token %}<input type="hidden" name="printer_id" value="{{ printer.pk }}"><button name="action" value="issue_token">Gerar nova credencial</button> <button name="action" value="revoke_token">Revogar acesso</button></form>
+    </details>
+  </section>
+  {% endfor %}
+  <section class="print-card"><h2>Adicionar impressora</h2><form method="post">{% csrf_token %}{{ printer_form.as_p }}<button name="action" value="save_printer">Adicionar impressora</button></form></section>
+  <p class="muted">O IP, a porta e o charset são configurados no bridge local. Confirme largura e corte na impressora real.</p>
+</div>
+{% endblock %}

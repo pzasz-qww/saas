@@ -1,0 +1,14 @@
+{
+  "server_url": "http://127.0.0.1:8000",
+  "printer_identifier": "COPIAR-IDENTIFICADOR-DO-SAAS",
+  "host": "IP-DA-IMPRESSORA",
+  "port": 9100,
+  "encoding": "cp860",
+  "codepage": 3,
+  "state_directory": "print_bridge/state",
+  "token_env": "PRINT_BRIDGE_TOKEN",
+  "poll_seconds": 2,
+  "timeout_seconds": 10,
+  "feed_lines": 4,
+  "cut_mode": "partial"
+}

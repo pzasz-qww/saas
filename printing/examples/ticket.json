@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "company_name": "BAR PRAÇA KENNEDY",
+  "order_number": 184,
+  "sale_reference": 1,
+  "ordered_at": "2026-08-27T21:42:00-03:00",
+  "table": "7",
+  "employee_role": "Garçom",
+  "employee_name": "Pedro",
+  "items": [
+    {
+      "quantity": "2.00",
+      "name": "Heineken",
+      "name_source": "order_item_capture",
+      "observation": "",
+      "unit_price": "10.00",
+      "line_total": "20.00"
+    },
+    {
+      "quantity": "1.00",
+      "name": "Calabresa",
+      "name_source": "order_item_capture",
+      "observation": "sem cebola",
+      "unit_price": "45.00",
+      "line_total": "45.00"
+    }
+  ],
+  "observation": "",
+  "total": "65.00",
+  "payment_method": "PIX",
+  "payment_code": "pix",
+  "missing_historical_data": []
+}

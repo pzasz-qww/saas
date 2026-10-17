@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}Trabalhos de impressão{% endblock %}
+{% block extra_css %}{% include "printing/prebeta4/style.html" %}{% endblock %}
+{% block content %}
+<div class="print-page"><h1>Trabalhos de impressão</h1><p>{{ request.current_company.name }}</p>
+{% if can_configure %}<p><a href="{% url 'printing:settings' %}">Configurar impressora</a></p>{% endif %}
+{% for message in messages %}<p role="status">{{ message }}</p>{% endfor %}
+<p class="muted">“Impresso” indica envio concluído ao transporte TCP ou à fila do Windows. Confira papel e qualidade no equipamento. Erros não são reenviados automaticamente.</p>
+<div class="print-card print-scroll"><table><thead><tr><th>Pedido / trabalho</th><th>Horário do pedido</th><th>Status</th><th>Tentativas</th><th>Último erro</th><th>Ações</th></tr></thead><tbody>
+{% for job in page %}<tr><td>#{{ job.order_reference }} <small>· {{ job.pk }}</small><br>{{ job.printer.name }}{% if job.reprint_of_id %}<br><small>Reimpressão de {{ job.reprint_of_id }}</small>{% endif %}</td><td>{{ job.payload.ordered_at }}<br><small>Criado na fila: {{ job.created_at|date:"d/m/Y H:i O" }}</small></td><td><span class="status {{ job.status }}">{{ job.get_status_display }}</span></td><td>{{ job.attempts }}</td><td class="error">{{ job.last_error|default:"—" }}</td><td><a href="{% url 'printing:preview' job.pk %}">Ver ticket</a>
+{% if can_reprint and job.status == 'printed' or can_reprint and job.status == 'error' %}<form method="post" action="{% url 'printing:reprint' job.pk %}">{% csrf_token %}<button>Reimprimir</button></form>{% endif %}
+{% if can_configure and job.status == 'processing' %}<details><summary>Resultado incerto</summary><form method="post" action="{% url 'printing:uncertain' job.pk %}">{% csrf_token %}<p>Pare o bridge e confira o papel antes de prosseguir.</p><label><input type="checkbox" name="confirmed" value="yes" required> Conferi o equipamento e parei o bridge.</label><button>Registrar como erro</button></form></details>{% endif %}
+</td></tr>{% empty %}<tr><td colspan="6">Nenhum trabalho de impressão nesta empresa.</td></tr>{% endfor %}
+</tbody></table></div>
+<p>{% if page.has_previous %}<a href="?page={{ page.previous_page_number }}">Anterior</a> · {% endif %}Página {{ page.number }} de {{ page.paginator.num_pages }}{% if page.has_next %} · <a href="?page={{ page.next_page_number }}">Próxima</a>{% endif %}</p>
+</div>{% endblock %}

@@ -1,0 +1,13 @@
+{
+  "server_url": "http://127.0.0.1:8000",
+  "printer_identifier": "COPIAR-IDENTIFICADOR-DO-SAAS",
+  "transport": "windows_raw",
+  "printer_name": "POS-80",
+  "host": "",
+  "port": 0,
+  "encoding": "cp860",
+  "codepage": 3,
+  "state_directory": "print_bridge/state",
+  "feed_lines": 5,
+  "cut_mode": "partial"
+}
