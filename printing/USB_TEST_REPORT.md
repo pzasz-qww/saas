@@ -32,7 +32,7 @@ Verificação de whitespace: sem erros. A suíte geral anterior à extensão USB
 
 Teste de corte enviado em 17/10/2026: um ticket identificado como TESTE CORTE USB, via bridge Windows RAW, 48 colunas, CP860/tabela 3, avanço de 5 linhas e corte parcial ativado apenas nesse envio. Aceito pelo Windows como trabalho #3. O usuário confirmou a impressão e o corte automático, deixando apenas um pequeno ponto preso, conforme o modo parcial. Não houve criação de venda, alteração de estoque ou ativação permanente do corte.
 
-1. Executar teste funcional pela interface na Empresa A.
+1. Teste funcional pela interface na Empresa A concluído e aprovado, incluindo corte e reimpressão sem nova baixa: [FUNCTIONAL_TEST_REPORT.md](FUNCTIONAL_TEST_REPORT.md).
 2. Para uso contínuo, informar a URL do SaaS e configurar credencial própria; a credencial temporária deste teste foi revogada.
 3. Validar concorrência com PostgreSQL no ambiente apropriado.
 
