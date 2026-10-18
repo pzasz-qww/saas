@@ -6,6 +6,14 @@
   <h1>Configurações de impressão</h1>
   <p>{{ request.current_company.name }} · {{ request.user.username }}</p>
   <p><a href="{% url 'printing:jobs' %}">Ver trabalhos de impressão</a></p>
+  <section class="print-card"><h2>Conectar este computador</h2>
+    {% if connector_download_url %}<p><a href="{{ connector_download_url }}">Baixar Conector para Windows</a></p>
+    {% elif connector_installer_available %}<p><a href="{% url 'printing:connector_installer' %}">Baixar Conector para Windows</a></p>
+    {% else %}<p>Solicite o instalador do Conector Windows ao suporte.</p>{% endif %}
+    <p>Abra o instalador no computador da impressora. Depois baixe o vínculo abaixo e abra o arquivo no conector.</p>
+    <form method="post" action="{% url 'printing:connector_download' %}">{% csrf_token %}<button>Conectar minha impressora</button></form>
+    <p>O arquivo vale por 10 minutos e só pode ser usado uma vez. Não compartilhe. No conector, escolha a impressora, teste o papel e ative a impressão ao confirmar a venda.</p>
+  </section>
   {% for message in messages %}<p role="status">{{ message }}</p>{% endfor %}
   {% if token %}<section class="print-card"><h2>Credencial do bridge</h2><p>Copie agora. Este segredo só aparece nesta resposta. A credencial anterior foi revogada.</p><code>{{ token }}</code><p>Configure no computador do bar, na variável PRINT_BRIDGE_TOKEN.</p></section>{% endif %}
   <section class="print-card"><h2>Impressão automática</h2><p>Gera um ticket após a venda confirmada. Se estiver desativada, novas vendas não entram na fila.</p>

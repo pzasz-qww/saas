@@ -133,6 +133,13 @@ class BridgeCredential(models.Model):
         return super().save(*args, **kwargs)
 
 
+class ConnectorLink(models.Model):
+    company = models.ForeignKey("companies.Company", on_delete=models.CASCADE)
+    digest = models.CharField(max_length=64, unique=True)
+    expires_at = models.DateTimeField()
+    used_at = models.DateTimeField(null=True, blank=True)
+
+
 class PrintJob(ImmutableRecord):
     class Status(models.TextChoices):
         PENDING = "pending", "Pendente"

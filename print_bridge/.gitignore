@@ -1,2 +1,5 @@
 state/
 config.local.json
+build/
+dist/*
+!dist/ConectorPracaPDV.exe

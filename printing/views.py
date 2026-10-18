@@ -1,5 +1,9 @@
 from functools import wraps
+import os
+from pathlib import Path
+from urllib.parse import urlsplit
 
+from django.conf import settings as django_settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import ValidationError
@@ -84,6 +88,9 @@ def settings_view(request):
     return render(request, "printing/prebeta4/settings.html", {
         "printer_form": printer_form, "settings_form": settings_form, "token": token,
         "printer_forms": printer_forms,
+        "connector_download_url": (os.environ.get('PRINT_CONNECTOR_DOWNLOAD_URL', '')
+            if urlsplit(os.environ.get('PRINT_CONNECTOR_DOWNLOAD_URL', '')).scheme == 'https' else ''),
+        "connector_installer_available": (Path(django_settings.BASE_DIR) / 'print_bridge/dist/ConectorPracaPDV.exe').is_file(),
     })
 
 
